@@ -1,0 +1,7 @@
+build/
+install/
+log/
+!.devcontainer/*
+!clone.sh
+!README.md
+!src/puzzlebot_control/

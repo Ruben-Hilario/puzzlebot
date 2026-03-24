@@ -1,0 +1,37 @@
+{
+    "name": "Puzzlebot Container",
+    "privileged": true,
+    "remoteUser": "brad",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "USERNAME": "brad"
+        }
+    },
+    "workspaceFolder": "/home/ros2_ws",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/home/ros2_ws,type=bind",
+    "customizations": {
+        "vscode": {
+            "extensions":[
+                "ms-vscode.cpptools",
+                "ms-vscode.cpptools-themes"
+            ]
+        }
+    },
+    "containerEnv": {
+        "DISPLAY": "unix:0",
+        "ROS_DOMAIN_ID": "42"
+    },
+    "runArgs": [
+        "--net=host",
+        "--pid=host",
+        "--ipc=host",
+        "-e", "DISPLAY=${env:DISPLAY}"
+    ],
+    "mounts": [
+       "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
+       "source=/dev,target=/dev,type=bind", 
+       "source=/dev/dri,target=/dev/dri,type=bind"
+     ],
+    "postCreateCommand": "sudo rosdep update && sudo rosdep install --from-paths src --ignore-src -y && sudo chown -R $(whoami) /home/ros2_ws/"
+}
