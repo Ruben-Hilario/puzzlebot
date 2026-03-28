@@ -1,4 +1,4 @@
-FROM ros:humble-ros-base
+FROM ros:humble
 ARG USERNAME=brad
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
@@ -13,6 +13,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && apt-get install -y sudo \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
+    
 RUN apt-get update && apt-get upgrade -y
 RUN apt-get install -y python3-pip
 RUN apt-get update && apt-get install -y udev python3-serial && \
@@ -21,8 +22,11 @@ RUN apt-get update && apt-get install -y udev python3-serial && \
 
 
 RUN apt-get update && apt-get upgrade -y && apt-get install -y \
-    ros-humble-desktop
+    wget \
+    micro \ 
+    ros-humble-tf-transformations
 
+    
 ENV SHELL /bin/bash
 
 USER $USERNAME
