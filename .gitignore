@@ -4,7 +4,7 @@ install/
 log/
 src/puzzlebot_control/
 src/puzzlebot_localisation/
-src/manchester_weekly/
+!src/manchester_weekly/
 !.devcontainer/*
 !clone.sh
 !README.md
