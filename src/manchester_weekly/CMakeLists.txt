@@ -77,6 +77,7 @@ ament_target_dependencies(testing_node
   rclcpp
   tf2
   tf2_ros
+  tf2_geometry_msgs
   geometry_msgs
   visualization_msgs
 )
@@ -91,6 +92,9 @@ install(TARGETS
 
 install(DIRECTORY launch/
  DESTINATION share/${PROJECT_NAME}/launch
+)
+install(DIRECTORY rviz/
+ DESTINATION share/${PROJECT_NAME}/rviz
 )
 
 file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py")
