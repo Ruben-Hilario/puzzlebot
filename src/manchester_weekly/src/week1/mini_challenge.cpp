@@ -11,7 +11,7 @@ public:
   PuzzlebotMarkerPublisher()
   : Node("mini_challenge_node") {
     marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("visualization_marker", 10);
-    tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+    tf_br = std::make_shared<tf2_ros::TransformBroadcaster>(this);
     start_time_ = this->now();
 
     timer_ = this->create_wall_timer(
@@ -23,59 +23,71 @@ private:
   void on_timer() {
     rclcpp::Time now = this->now();
     double elapsed = (now - this->start_time_).seconds();
-    double radius = 0.4;
-    double omega = 0.4;
-
+    
+    double R_path = 0.5;
+    double omega = 0.1;     
+    double wheel_r = 0.05; 
+    double d = 0.09;
+    double angle = omega * elapsed;
+       
     auto world_to_chassis = make_transform(
       "world", "chassis",
-      radius * std::sin(omega * elapsed),
-      radius * std::cos(omega * elapsed),
-      0.05,
-      0.0, 0.0,
-      omega * elapsed);
+      R_path * std::cos(angle), 
+      R_path * std::sin(angle), 
+      0.05, 
+      M_PI/2, 0.0, angle);
     world_to_chassis.header.stamp = now;
-    tf_broadcaster_->sendTransform(world_to_chassis);
-
-    auto chassis_to_lidar = make_transform(
-      "chassis", "lidar_link",
-      0.0, 0.09, 0.04,
-      3.141592, -1.5708, 1.5708);
-    chassis_to_lidar.header.stamp = now;
-    tf_broadcaster_->sendTransform(chassis_to_lidar);
-
-    auto chassis_to_right_wheel = make_transform(
-      "chassis", "right_wheel",
-      -0.09, 0.0, 0.05,
-      0.0, 1.5708, 0.0);
-    chassis_to_right_wheel.header.stamp = now;
-    tf_broadcaster_->sendTransform(chassis_to_right_wheel);
-
+    
+    double left_track_R = R_path + d;
+    double right_track_R = R_path - d;
+    double left_spin = (left_track_R * angle) / wheel_r;
+    double right_spin = (right_track_R * angle) / wheel_r;
+    auto get_wheel_rotation = [](double spin) {
+        tf2::Quaternion q_base, q_spin;
+        q_base.setRPY(0, M_PI/2, 0); // Orientación base
+        q_spin.setRPY(spin, 0, 0);   // Giro de la rueda (Prueba Roll o Pitch aquí)
+        
+        tf2::Quaternion q_res = q_base * q_spin;
+        q_res.normalize();
+        return q_res;
+    };
+    
     auto chassis_to_left_wheel = make_transform(
       "chassis", "left_wheel",
-      0.09, 0.0, 0.05,
-      -1.5708, 0.0, 1.5708);
+      d, 0.0, 0.0,           
+      0.0,M_PI/2,0.0
+    );  
     chassis_to_left_wheel.header.stamp = now;
-    tf_broadcaster_->sendTransform(chassis_to_left_wheel);
+    
+    auto chassis_to_right_wheel = make_transform(
+      "chassis", "right_wheel",
+      -d, 0.0, 0.0,          
+      0.0,M_PI/2, 0.0
+    ); 
+    chassis_to_right_wheel.header.stamp = now;
+    
+    auto chassis_to_lidar = make_transform(
+        "chassis", "lidar_link",
+      0.0, 0.09, 0.05,        
+      -M_PI/2, -M_PI/2, 0.0
+    );   
+    chassis_to_lidar.header.stamp = now;
 
-    publish_mesh_marker(
-      "chassis", 0,
-      "package://puzzlebot_description/models/puzzlebot/meshes/chassis.stl",
-      1.0, 0.8, 0.8, 0.8);
-
-    publish_mesh_marker(
-      "lidar_link", 1,
-      "package://puzzlebot_description/models/puzzlebot/meshes/LiDAR.stl",
-      0.001, 0.0, 0.0, 0.0);
-
-    publish_mesh_marker(
-      "right_wheel", 2,
-      "package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl",
-      1.0, 0.1, 0.1, 0.1);
-
-    publish_mesh_marker(
-      "left_wheel", 3,
-      "package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl",
-      1.0, 0.1, 0.1, 0.1);
+    // tf_br->sendTransform(world_to_chassis);
+    // tf_br->sendTransform(chassis_to_left_wheel);
+    // tf_br->sendTransform(chassis_to_right_wheel);
+    // tf_br->sendTransform(chassis_to_lidar);
+    std::vector<geometry_msgs::msg::TransformStamped> transforms;
+    transforms.push_back(world_to_chassis);
+    transforms.push_back(chassis_to_left_wheel);
+    transforms.push_back(chassis_to_right_wheel);
+    transforms.push_back(chassis_to_lidar);
+    tf_br->sendTransform(transforms);
+          
+    publish_mesh_marker("chassis", 0, "package://puzzlebot_description/models/puzzlebot/meshes/chassis.stl", 1.0, 0.8, 0.8, 0.8);
+    publish_mesh_marker("lidar_link", 1, "package://puzzlebot_description/models/puzzlebot/meshes/LiDAR.stl", 0.001, 0.0, 0.0, 0.0);
+    publish_mesh_marker("right_wheel", 2, "package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl", 1.0, 0.1, 0.1, 0.1);
+    publish_mesh_marker("left_wheel", 3, "package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl", 1.0, 0.1, 0.1, 0.1);
   }
 
   geometry_msgs::msg::TransformStamped make_transform(
@@ -136,7 +148,7 @@ private:
   }
 
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
-  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_br;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Time start_time_;
 };
