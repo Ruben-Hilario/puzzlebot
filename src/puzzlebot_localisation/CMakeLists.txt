@@ -14,18 +14,18 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
-add_executable(puzzlebot_localisation
+add_executable(puzzlebot_localisation_node
   src/localisation_node.cpp
   src/localisation.cpp
 )
 
-target_compile_features(puzzlebot_localisation PUBLIC c_std_99 cxx_std_17)
-target_include_directories(puzzlebot_localisation PUBLIC
+target_compile_features(puzzlebot_localisation_node PUBLIC c_std_99 cxx_std_17)
+target_include_directories(puzzlebot_localisation_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(puzzlebot_localisation
+ament_target_dependencies(puzzlebot_localisation_node
   rclcpp
   std_msgs
   nav_msgs
@@ -34,8 +34,10 @@ ament_target_dependencies(puzzlebot_localisation
   visualization_msgs
 )
 
-
-
+install(TARGETS
+  puzzlebot_localisation_node
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

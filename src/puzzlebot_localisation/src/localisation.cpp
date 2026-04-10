@@ -2,11 +2,10 @@
 #include <cmath>
 
 namespace puzzlebot_localisation{
-PuzzlebotLocalisation::PuzzlebotLocalisation() : Node("Puzzlebot Localisation") {
-    // Inicialización de variables
+PuzzlebotLocalisation::PuzzlebotLocalisation() : Node("Puzzlebot_localisation") {
     X_ = 0.0; Y_ = 0.0; Th_ = 0.0;
-    l_ = 0.18;  // Distancia entre ruedas
-    r_ = 0.05;  // Radio de rueda
+    l_ = 0.18;  // Wheel distance
+    r_ = 0.05;  // Wheel radius
     sample_time_ = 0.01;
     rate_ = 200.0;
 
@@ -16,17 +15,13 @@ PuzzlebotLocalisation::PuzzlebotLocalisation() : Node("Puzzlebot Localisation") 
     V_ = 0.0;
     Omega_ = 0.0;
 
-    // QoS compatible con sensor_data (Reliability: Best Effort, Durability: Volatile)
+    // QoS sensor_data (Reliability: Best Effort, Durability: Volatile)
     auto qos_sensor = rclcpp::SensorDataQoS();
 
-    // Suscriptores
     sub_encR_ = this->create_subscription<std_msgs::msg::Float32>(
         "VelocityEncR", qos_sensor, std::bind(&PuzzlebotLocalisation::encR_callback, this, std::placeholders::_1));
-    
     sub_encL_ = this->create_subscription<std_msgs::msg::Float32>(
         "VelocityEncL", qos_sensor, std::bind(&PuzzlebotLocalisation::encL_callback, this, std::placeholders::_1));
-
-    // Publicador
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", qos_sensor);
 
     // Timer (200Hz)
@@ -36,8 +31,7 @@ PuzzlebotLocalisation::PuzzlebotLocalisation() : Node("Puzzlebot Localisation") 
     RCLCPP_INFO(this->get_logger(), "Localisation Node (C++) Started.");
 }
 
-PuzzlebotLocalisation::~PuzzlebotLocalisation() {
-}
+PuzzlebotLocalisation::~PuzzlebotLocalisation() {}
 
 void PuzzlebotLocalisation::encR_callback(const std_msgs::msg::Float32::SharedPtr msg) {
     wr_val_ = msg->data;
@@ -58,7 +52,7 @@ void PuzzlebotLocalisation::run() {
     double dt = (current_time - last_time_).seconds();
 
     if (dt > sample_time_) {
-        // Velocidades tangenciales
+        //Tangential Velocities
         double v_r = r_ * wr_val_;
         double v_l = r_ * wl_val_;
 
@@ -72,11 +66,11 @@ void PuzzlebotLocalisation::run() {
             return;
         }
 
-        // Cinemática diferencial
+        //Differential Kinematics
         V_ = (v_r + v_l) / 2.0;
         Omega_ = (v_r - v_l) / l_;
 
-        // Integración de posición
+        //Position Integration
         double delta_theta = Omega_ * dt;
         Th_ += delta_theta;
         Th_ = wrap_to_pi(Th_);
@@ -102,17 +96,17 @@ void PuzzlebotLocalisation::publish_odometry() {
     odom_msg.header.frame_id = "odom";
     odom_msg.child_frame_id = "base_footprint";
 
-    // Posición
+    //Position
     odom_msg.pose.pose.position.x = X_;
     odom_msg.pose.pose.position.y = Y_;
     odom_msg.pose.pose.position.z = 0.0;
 
-    // Conversión de Yaw a Cuaternión (tf2)
+    //Yaw to Quaternion (tf2)
     tf2::Quaternion q;
     q.setRPY(0, 0, Th_);
     odom_msg.pose.pose.orientation = tf2::toMsg(q);
 
-    // Velocidades
+    // Velocities
     odom_msg.twist.twist.linear.x = V_;
     odom_msg.twist.twist.angular.z = Omega_;
 

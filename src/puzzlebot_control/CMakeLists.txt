@@ -7,9 +7,33 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+
+# Include directories
+include_directories(include)
+
+# Add control executable
+add_executable(puzzlebot_control_node src/control.cpp)
+ament_target_dependencies(puzzlebot_control_node 
+  rclcpp 
+  geometry_msgs 
+  nav_msgs 
+  std_srvs
+)
+
+# Install executable
+install(TARGETS
+  puzzlebot_control_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install header files
+install(DIRECTORY include/
+  DESTINATION include
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

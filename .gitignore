@@ -3,9 +3,9 @@ build/
 install/
 log/
 src/puzzlebot_control/
+src/puzzlebot_vision/
 !src/puzzlebot_localisation/
 !src/manchester_weekly/
 !.devcontainer/*
 !clone.sh
 !README.md
-!src/puzzlebot_description/
