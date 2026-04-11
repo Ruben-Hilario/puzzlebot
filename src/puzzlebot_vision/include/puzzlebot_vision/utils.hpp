@@ -9,6 +9,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect.hpp>
+#include <opencv2/opencv.hpp>
 #include <vector>
 #include <string>
 #include <sstream>
@@ -20,13 +21,15 @@ struct QRData {
     std::vector<cv::Point2f> corners; 
     float confidence;        
 };
-    class QRDetector : public rclcpp::Node {
+    class VisionUtils : public rclcpp::Node {
     public:
-        QRDetector();
-        ~QRDetector();
+        VisionUtils();
+        ~VisionUtils();
         
     private:
-        void image_callback(const sensor_msgs::msg::Image::SharedPtr msg);
+        void imageCb(const sensor_msgs::msg::Image::SharedPtr msg);
+        void timerCb();
+        void recordData(const cv::Mat& frame);
         
         std::vector<QRData> detect_qr_codes(const cv::Mat& image);
         bool decode_qr(const cv::Mat& image, const std::vector<cv::Point2f>& qr_corners, 
@@ -36,9 +39,12 @@ struct QRData {
         rclcpp::Publisher<std_msgs::msg::String>::SharedPtr qr_data_pub_;
         rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr qr_center_pub_;
         cv::QRCodeDetector qr_detector_;
+        cv::VideoWriter video_writer_;
+
         
         bool debug_mode_;
         int min_qr_size_;
+        bool recording_= false;
     };
 
 } 

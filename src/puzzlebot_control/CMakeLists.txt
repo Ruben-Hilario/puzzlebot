@@ -12,12 +12,18 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
-# Include directories
-include_directories(include)
+add_executable(puzzlebot_pid_node
+  src/pid_node.cpp
+  src/control.cpp
+)
 
-# Add control executable
-add_executable(puzzlebot_control_node src/control.cpp)
-ament_target_dependencies(puzzlebot_control_node 
+target_compile_features(puzzlebot_pid_node PUBLIC c_std_99 cxx_std_17)
+target_include_directories(puzzlebot_pid_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(puzzlebot_pid_node
   rclcpp 
   geometry_msgs 
   nav_msgs 
@@ -26,7 +32,7 @@ ament_target_dependencies(puzzlebot_control_node
 
 # Install executable
 install(TARGETS
-  puzzlebot_control_node
+  puzzlebot_pid_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

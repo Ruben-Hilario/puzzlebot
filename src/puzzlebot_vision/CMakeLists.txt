@@ -16,14 +16,19 @@ find_package(geometry_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 
-# Include directories
-include_directories(include)
+add_executable(record_node
+  src/record_node.cpp
+  src/utils.cpp
+)
 
-# Create executable for QR detector
-add_executable(qr_detector src/utils.cpp)
+target_compile_features(record_node PUBLIC c_std_99 cxx_std_17)
+target_include_directories(record_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 
 # Link dependencies
-ament_target_dependencies(qr_detector
+ament_target_dependencies(record_node
   rclcpp
   sensor_msgs
   geometry_msgs
@@ -33,8 +38,13 @@ ament_target_dependencies(qr_detector
 )
 
 # Install executable
-install(TARGETS qr_detector
+install(TARGETS 
+  record_node
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY include/
+  DESTINATION include
 )
 
 install(DIRECTORY launch/

@@ -32,10 +32,16 @@ add_executable(mini_challenge_week_1
   src/week1/mini_challenge.cpp
 )
 
+add_executable(mini_challenge_week_2
+  src/week2/mini_challenge.cpp
+  src/week2/week2.cpp
+)
+
 target_compile_features(static_tf_week_1 PUBLIC c_std_99 cxx_std_17)
 target_compile_features(dynamic_tf_week_1 PUBLIC c_std_99 cxx_std_17)
 target_compile_features(mini_challenge_week_1 PUBLIC c_std_99 cxx_std_17)
 target_compile_features(testing_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(mini_challenge_week_2 PUBLIC c_std_99 cxx_std_17)
 
 target_include_directories(static_tf_week_1 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -50,6 +56,11 @@ target_include_directories(mini_challenge_week_1 PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 target_include_directories(testing_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+target_include_directories(mini_challenge_week_2 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
@@ -82,11 +93,19 @@ ament_target_dependencies(testing_node
   visualization_msgs
 )
 
+ament_target_dependencies(mini_challenge_week_2
+  rclcpp
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+)
+
 install(TARGETS
   static_tf_week_1
   dynamic_tf_week_1
   mini_challenge_week_1
   testing_node
+  mini_challenge_week_2
   DESTINATION lib/${PROJECT_NAME}
 )
 
