@@ -108,7 +108,8 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control") {
         "cmd_vel", qos_default);
     auto interval = std::chrono::duration<double>(1.0 / control_rate_);
     control_timer_ = this->create_wall_timer(interval, 
-        std::bind(&PuzzlebotControl::control_loop, this));
+    //     std::bind(&PuzzlebotControl::control_loop, this));
+            std::bind(&PuzzlebotControl::square_path, this));
     
     first_control_ = true;
     
@@ -199,6 +200,29 @@ void PuzzlebotControl::control_loop() {
                 "Yaw: %.2f AngleErr: %.2f V: %.2f Omega: %.2f",
                 current_x_, current_y_, target_x_, target_y_, distance_to_target,
                 current_yaw_, angle_error, v_linear, v_angular);
+}
+
+void PuzzlebotControl::square_path(){
+    std::vector<std::pair<double, double>> waypoints = {
+        {1.0, 0.0},
+        {1.0, 1.0},
+        {0.0, 1.0},
+        {0.0, 0.0}
+    };
+    
+    for (const auto& waypoint : waypoints) {
+        target_x_ = waypoint.first;
+        target_y_ = waypoint.second;
+        has_target_ = true;
+        
+        pid_linear_->reset();
+        pid_angular_->reset();
+        
+        while (rclcpp::ok() && has_target_) {
+            rclcpp::spin_some(this->get_node_base_interface());
+            rclcpp::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
 }
 
 double PuzzlebotControl::calculate_distance(double x1, double y1, 

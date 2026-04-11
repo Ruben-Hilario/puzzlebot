@@ -43,6 +43,7 @@ namespace puzzlebot_control {
         void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
         void target_point_callback(const geometry_msgs::msg::Point::SharedPtr msg);
         void control_loop();
+        void square_path();
         
         // Helper functions
         double calculate_distance(double x1, double y1, double x2, double y2);
