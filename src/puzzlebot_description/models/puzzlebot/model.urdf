@@ -35,9 +35,9 @@
 
   <link name="left_wheel">
     <inertial>
-      <mass value="0.05"/> 
-      <origin rpy="0 1.5708 -1.5708" xyz="0.0 0.0 0.0" />
-      <inertia ixx="0.002" ixy="0.0" ixz="0.0" iyy="0.002" iyz="0.0" izz="0.002"/>
+      <mass value="0.05"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
     </inertial>
     <visual>
       <origin rpy="0 1.5708 -1.5708" xyz="0.0 0.0 0.0"/>
@@ -66,9 +66,9 @@
 
   <link name="right_wheel">
     <inertial>
-      <mass value="0.05"/> 
-      <origin rpy="0 -1.5708 -1.5708" xyz="0.0 0.0 0.0" />
-      <inertia ixx="0.002" ixy="0.0" ixz="0.0" iyy="0.002" iyz="0.0" izz="0.002"/>
+      <mass value="0.05"/>
+      <origin xyz="0 0 0"/>
+      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
     </inertial>
     <visual>
       <origin rpy="0 -1.5708 -1.5708" xyz="0.0 0.0 0.0"/>

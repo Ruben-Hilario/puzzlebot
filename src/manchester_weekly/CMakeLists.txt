@@ -30,18 +30,26 @@ add_executable(testing_node
 
 add_executable(mini_challenge_week_1
   src/week1/mini_challenge.cpp
+  src/utils/frame_publisher.cpp
 )
 
-add_executable(mini_challenge_week_2
-  src/week2/mini_challenge.cpp
-  src/week2/week2.cpp
+# Note: week2 uses the URDF-based implementation (week2_urdf)
+# add_executable(mini_challenge_week_2
+#   src/week2/mini_challenge.cpp
+#   src/week2/week2.cpp
+# )
+
+add_executable(week2_urdf
+  src/week2/urdf_publisher.cpp
+  src/week2/week2_urdf_main.cpp
 )
 
 target_compile_features(static_tf_week_1 PUBLIC c_std_99 cxx_std_17)
 target_compile_features(dynamic_tf_week_1 PUBLIC c_std_99 cxx_std_17)
 target_compile_features(mini_challenge_week_1 PUBLIC c_std_99 cxx_std_17)
 target_compile_features(testing_node PUBLIC c_std_99 cxx_std_17)
-target_compile_features(mini_challenge_week_2 PUBLIC c_std_99 cxx_std_17)
+# target_compile_features(mini_challenge_week_2 PUBLIC c_std_99 cxx_std_17)
+target_compile_features(week2_urdf PUBLIC c_std_99 cxx_std_17)
 
 target_include_directories(static_tf_week_1 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -60,7 +68,12 @@ target_include_directories(testing_node PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-target_include_directories(mini_challenge_week_2 PUBLIC
+# target_include_directories(mini_challenge_week_2 PUBLIC
+#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#   $<INSTALL_INTERFACE:include>
+# )
+
+target_include_directories(week2_urdf PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
@@ -82,6 +95,7 @@ ament_target_dependencies(mini_challenge_week_1
   tf2_ros
   geometry_msgs
   visualization_msgs
+  tf2_geometry_msgs
 )
 
 ament_target_dependencies(testing_node
@@ -93,11 +107,19 @@ ament_target_dependencies(testing_node
   visualization_msgs
 )
 
-ament_target_dependencies(mini_challenge_week_2
+# ament_target_dependencies(mini_challenge_week_2
+#   rclcpp
+#   tf2
+#   tf2_ros
+#   tf2_geometry_msgs
+# )
+
+ament_target_dependencies(week2_urdf
   rclcpp
   tf2
   tf2_ros
   tf2_geometry_msgs
+  geometry_msgs
 )
 
 install(TARGETS
@@ -105,7 +127,7 @@ install(TARGETS
   dynamic_tf_week_1
   mini_challenge_week_1
   testing_node
-  mini_challenge_week_2
+  week2_urdf
   DESTINATION lib/${PROJECT_NAME}
 )
 

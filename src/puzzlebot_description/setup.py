@@ -17,6 +17,9 @@ setup(
         ('share/' + package_name, ['package.xml']),
           ('share/' + package_name + '/models/puzzlebot', glob('models/puzzlebot/*.*')),
         ('share/' + package_name + '/models/puzzlebot/meshes', glob('models/puzzlebot/meshes/*')),
+        ('share/' + package_name + '/models/track', glob('models/track/*.*')),
+        ('share/' + package_name + '/models/track/meshes', glob('models/track/meshes/*')),
+
     ],
     install_requires=['setuptools'],
     zip_safe=True,
