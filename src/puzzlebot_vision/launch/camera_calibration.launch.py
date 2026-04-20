@@ -52,6 +52,6 @@ def generate_launch_description(context, *args, **kwargs):
     return LaunchDescription([
         video_publisher_node,
         camera_info_node,
-        camera_calibration_node
+        #camera_calibration_node
     ])
         
