@@ -45,6 +45,16 @@ struct QRData {
         bool debug_mode_;
         int min_qr_size_;
         bool recording_= false;
+
+        //Added camera calibration parameters
+        double calibration_matrix [3][3]={
+            {1.33941091e+03, 0.00000000e+00, 6.02914814e+02},
+            {0.00000000e+00, 1.34209087e+03, 3.65183966e+02},
+            {0.00000000e+00, 0.00000000e+00, 1.00000000e+00}
+        };
+        double distortion_coefficients[5] = {
+            0.17415664, -0.16770446, 0.00368621, -0.00962593, -0.23862256
+        };
     };
 
 } 

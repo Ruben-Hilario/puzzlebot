@@ -4,8 +4,7 @@
 namespace puzzlebot_localisation
 {
 
-KalmanFilter::KalmanFilter()
-{
+KalmanFilter::KalmanFilter(){
     state_ = Eigen::Vector3d::Zero();
     P_ = Eigen::Matrix3d::Identity() * 0.1;
     I_ = Eigen::Matrix3d::Identity();
@@ -21,14 +20,12 @@ KalmanFilter::KalmanFilter()
     R_(2, 2) = 0.3;
 }
 
-void KalmanFilter::initialize(double x, double y, double theta)
-{
+void KalmanFilter::initialize(double x, double y, double theta){
     state_ << x, y, theta;
     P_ = Eigen::Matrix3d::Identity() * 0.1;
 }
 
-void KalmanFilter::predict(double delta_x, double delta_y, double delta_theta, double dt)
-{
+void KalmanFilter::predict(double delta_x, double delta_y, double delta_theta, double dt){
     Eigen::Vector3d delta << delta_x, delta_y, delta_theta;
     state_ += delta;
     
@@ -41,8 +38,7 @@ void KalmanFilter::predict(double delta_x, double delta_y, double delta_theta, d
     P_ = F * P_ * F.transpose() + Q_;
 }
 
-void KalmanFilter::update(double measured_x, double measured_y, double measured_theta)
-{
+void KalmanFilter::update(double measured_x, double measured_y, double measured_theta){
     Eigen::Vector3d z << measured_x, measured_y, measured_theta;
     Eigen::Vector3d y = z - state_;
     
@@ -58,13 +54,11 @@ void KalmanFilter::update(double measured_x, double measured_y, double measured_
     P_ = (I_ - K * H) * P_;
 }
 
-Eigen::Vector3d KalmanFilter::getState() const
-{
+Eigen::Vector3d KalmanFilter::getState() const{
     return state_;
 }
 
-Eigen::Matrix3d KalmanFilter::getCovariance() const
-{
+Eigen::Matrix3d KalmanFilter::getCovariance() const{
     return P_;
 }
 

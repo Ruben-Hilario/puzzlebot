@@ -8,6 +8,10 @@ struct Particle {
     double weight;
 };
 
+#TODO 
+# agregar metodo de sampling global para la generacion del mapa
+# - Agregar metodos de resampling, importancia, y kalman
+# - Usar junto con kalman para comparar tracking
 namespace montecarlo_mapping{
     class MonteCarlo : public rclcpp::Node {
     public:
