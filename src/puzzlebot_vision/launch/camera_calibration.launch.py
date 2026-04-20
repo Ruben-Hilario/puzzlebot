@@ -4,7 +4,7 @@ from launch.actions import DeclareLaunchArgument, LaunchConfiguration
 import os
 from ament_index_python.packages import get_package_share_directory
 
-def generate_launch_description(context, *args, **kwargs):
+def generate_launch_description():
 
     video_path = os.path.join(get_package_share_directory('puzzlebot_vision'), 'media', 'puzzlebot3.mp4')
 

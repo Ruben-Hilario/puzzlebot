@@ -46,12 +46,15 @@ install(TARGETS
 install(DIRECTORY include/
   DESTINATION include
 )
-
 install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
+install(DIRECTORY media/
+  DESTINATION share/${PROJECT_NAME}/media/
+)
 
-file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*py")
+
+file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/ros2_nodes/*py")
 install(PROGRAMS ${python_scripts}
   DESTINATION lib/${PROJECT_NAME}
 )

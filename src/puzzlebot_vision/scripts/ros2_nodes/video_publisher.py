@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #ROS2 node to publish a video frame, useful for testing the vision pipeline without needing a physical camera or calibrating a camera
 import rclpy
 from rclpy.node import Node
@@ -5,21 +6,21 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
 import os
+from ament_index_python.packages import get_package_share_directory
 
 
 class VideoPublisher(Node):
     def __init__(self):
         super().__init__('video_publisher')
+        # #self.declare_parameter('video_path','/home/ros2_ws/src/puzzlebot_vision/media/model_test.mp4')
+        # self.declare_parameter('fps', 30.0)
+        # self.declare_parameter('topic_name', 'video_frames')
+        # self.declare_parameter('loop', True)
         
-        self.declare_parameter('video_path', '')
-        self.declare_parameter('fps', 30.0)
-        self.declare_parameter('topic_name', 'video_frames')
-        self.declare_parameter('loop', True)
-        
-        self.video_path = self.get_parameter('video_path').value
-        self.fps = self.get_parameter('fps').value
-        self.topic_name = self.get_parameter('topic_name').value
-        self.loop = self.get_parameter('loop').value
+        self.video_path = os.path.join(get_package_share_directory('puzzlebot_vision'), 'media', 'model_test.mp4')
+        self.fps = 30.0
+        self.topic_name = 'video_frames'
+        self.loop = True
         
         if not self.video_path or not os.path.exists(self.video_path):
             self.get_logger().error(f'Video file not found: {self.video_path}')
