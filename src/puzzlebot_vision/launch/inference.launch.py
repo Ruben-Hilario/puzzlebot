@@ -14,7 +14,7 @@ def generate_launch_description(context, *args, **kwargs):
     mode = LaunchConfiguration('mode').perform(context)
     model = LaunchConfiguration('model').perform(context)
 
-    video_path = os.path.join(get_package_share_directory('puzzlebot_vision'), 'media', 'puzzlebot3.mp4')
+    video_path = os.path.join(get_package_share_dixrectory('puzzlebot_vision'), 'media', 'puzzlebot3.mp4')
 
     video_publisher_node = Node(
         package='puzzlebot_vision',

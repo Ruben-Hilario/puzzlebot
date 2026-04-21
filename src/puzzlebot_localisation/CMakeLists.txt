@@ -14,18 +14,18 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
-add_executable(puzzlebot_localisation_node
+add_executable(odom_node
   src/localisation_node.cpp
   src/localisation.cpp
 )
 
-target_compile_features(puzzlebot_localisation_node PUBLIC c_std_99 cxx_std_17)
-target_include_directories(puzzlebot_localisation_node PUBLIC
+target_compile_features(odom_node PUBLIC c_std_99 cxx_std_17)
+target_include_directories(odom_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(puzzlebot_localisation_node
+ament_target_dependencies(odom_node
   rclcpp
   std_msgs
   nav_msgs
@@ -35,7 +35,7 @@ ament_target_dependencies(puzzlebot_localisation_node
 )
 
 install(TARGETS
-  puzzlebot_localisation_node
+  odom_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

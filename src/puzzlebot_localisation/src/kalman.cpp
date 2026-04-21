@@ -1,6 +1,9 @@
 #include "puzzlebot_localisation/kalman.hpp"
 #include <cmath>
-
+// TODO:
+// - Expand filter to Kalman Extended
+// - Do tests with simulated ground truth
+// - Mesure the performance and test with kidnapped possibillities
 namespace puzzlebot_localisation
 {
 

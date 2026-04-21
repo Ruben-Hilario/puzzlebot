@@ -7,6 +7,7 @@
 #include "geometry_msgs/msg/point.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include <cmath>
+#include <vector>
 
 namespace puzzlebot_control {
 
@@ -44,6 +45,7 @@ namespace puzzlebot_control {
         void target_point_callback(const geometry_msgs::msg::Point::SharedPtr msg);
         void control_loop();
         void square_path();
+        void circle();
         
         // Helper functions
         double calculate_distance(double x1, double y1, double x2, double y2);
@@ -81,6 +83,11 @@ namespace puzzlebot_control {
         rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr target_point_sub_;
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
         rclcpp::TimerBase::SharedPtr control_timer_;
+        
+        // Path state
+        bool square_mode_;
+        size_t square_waypoint_index_;
+        std::vector<std::pair<double, double>> square_waypoints_;
         
         // Timing
         rclcpp::Time last_control_time_;

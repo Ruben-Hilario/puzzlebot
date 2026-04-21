@@ -51,7 +51,15 @@ void PIDController::set_limits(double max_output, double min_output) {
     min_output_ = min_output;
 }
 
-PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control") {
+PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control"),
+    square_mode_(true),
+    square_waypoint_index_(0),
+    square_waypoints_({
+        {1.0, 0.0},
+        {1.0, 1.0},
+        {0.0, 1.0},
+        {0.0, 0.0}
+    }) {
     current_x_ = 0.0;
     current_y_ = 0.0;
     current_yaw_ = 0.0;
@@ -61,13 +69,13 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control") {
     target_y_ = 0.0;
     has_target_ = false;
     
-    this->declare_parameter<double>("kp_linear", 1.0);
-    this->declare_parameter<double>("ki_linear", 0.1);
-    this->declare_parameter<double>("kd_linear", 0.5);
+    this->declare_parameter<double>("kp_linear", 0.2);
+    this->declare_parameter<double>("ki_linear", 0.01);
+    this->declare_parameter<double>("kd_linear", 0.001);
     
-    this->declare_parameter<double>("kp_angular", 2.0);
-    this->declare_parameter<double>("ki_angular", 0.05);
-    this->declare_parameter<double>("kd_angular", 0.3);
+    this->declare_parameter<double>("kp_angular", 1.2);
+    this->declare_parameter<double>("ki_angular", 0.5);
+    this->declare_parameter<double>("kd_angular", 0.2);
     
     this->declare_parameter<double>("position_tolerance", 0.05);
     this->declare_parameter<double>("angle_tolerance", 0.1);
@@ -95,9 +103,10 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control") {
                                      max_angular_velocity_, -max_angular_velocity_);
     
     auto qos_default = rclcpp::QoS(10);
+    auto qos_sensor = rclcpp::SensorDataQoS();
     
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "odom", qos_default, std::bind(&PuzzlebotControl::odom_callback, this, 
+        "odom", qos_sensor, std::bind(&PuzzlebotControl::odom_callback, this, 
         std::placeholders::_1));
     
     target_point_sub_ = this->create_subscription<geometry_msgs::msg::Point>(
@@ -108,7 +117,6 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control") {
         "cmd_vel", qos_default);
     auto interval = std::chrono::duration<double>(1.0 / control_rate_);
     control_timer_ = this->create_wall_timer(interval, 
-    //     std::bind(&PuzzlebotControl::control_loop, this));
             std::bind(&PuzzlebotControl::square_path, this));
     
     first_control_ = true;
@@ -153,6 +161,12 @@ void PuzzlebotControl::target_point_callback(const geometry_msgs::msg::Point::Sh
     pid_linear_->reset();
     pid_angular_->reset();
 }
+
+/*void PuzzlebotControl::circle(){
+    
+}
+
+*/
 
 void PuzzlebotControl::control_loop() {
     if (!has_target_) {
@@ -202,25 +216,35 @@ void PuzzlebotControl::control_loop() {
                 current_yaw_, angle_error, v_linear, v_angular);
 }
 
-void PuzzlebotControl::square_path(){
-    std::vector<std::pair<double, double>> waypoints = {
-        {1.0, 0.0},
-        {1.0, 1.0},
-        {0.0, 1.0},
-        {0.0, 0.0}
-    };
-    
-    for (const auto& waypoint : waypoints) {
-        target_x_ = waypoint.first;
-        target_y_ = waypoint.second;
+void PuzzlebotControl::square_path() {
+    if (!square_mode_) {
+        control_loop();
+        return;
+    }
+
+    if (square_waypoint_index_ >= square_waypoints_.size()) {
+        stop_robot();
+        return;
+    }
+
+    if (!has_target_) {
+        target_x_ = square_waypoints_[square_waypoint_index_].first;
+        target_y_ = square_waypoints_[square_waypoint_index_].second;
         has_target_ = true;
-        
+
         pid_linear_->reset();
         pid_angular_->reset();
-        
-        while (rclcpp::ok() && has_target_) {
-            rclcpp::spin_some(this->get_node_base_interface());
-            rclcpp::sleep_for(std::chrono::milliseconds(10));
+        RCLCPP_INFO(this->get_logger(), "Square waypoint %zu: (%.2f, %.2f)",
+                    square_waypoint_index_, target_x_, target_y_);
+    }
+
+    control_loop();
+
+    if (!has_target_) {
+        square_waypoint_index_++;
+        if (square_waypoint_index_ >= square_waypoints_.size()) {
+            RCLCPP_INFO(this->get_logger(), "Square path complete");
+            stop_robot();
         }
     }
 }

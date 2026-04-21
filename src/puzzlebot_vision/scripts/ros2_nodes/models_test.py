@@ -30,7 +30,8 @@ class YoloInferenceNode(Node):
             Image,
             '/video_frames', 
             self.image_callback,
-            10)
+            10
+        )
         
         # 4. Publisher: Send the results back out (optional)
         self.publisher = self.create_publisher(Image, '/yolo/visual_result', 10)

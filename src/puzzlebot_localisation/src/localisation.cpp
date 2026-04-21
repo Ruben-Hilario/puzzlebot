@@ -4,8 +4,8 @@
 namespace puzzlebot_localisation{
 PuzzlebotLocalisation::PuzzlebotLocalisation() : Node("Puzzlebot_localisation") {
     X_ = 0.0; Y_ = 0.0; Th_ = 0.0;
-    l_ = 0.18;  // Wheel distance
-    r_ = 0.05;  // Wheel radius
+    l_ = 0.18;
+    r_ = 0.05;
     sample_time_ = 0.01;
     rate_ = 200.0;
 
