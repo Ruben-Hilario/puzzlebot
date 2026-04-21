@@ -1,47 +1,17 @@
-import os
 import numpy as np
-import sciṕy.io.wavfile as wav
+import scipy
 #import lisbrosa
 
 class VoiceUtils():
-    #TODO 
-    # - Change this to individual instead of entire dataset loaded to avoid memory spikes
-    def loadDataset(path):
-        data = {}
-        sr = {}
-        for word in os.listdir(path):
-            word_path = os.path.join(path, word)
-
-            if not os.path.isdir(word_path):
-                continue
-
-            signals = []
-            for file in sorted(os.listdir(word_path)):
-                file_path = os.path.join(word_path, file)
-
-                if not file.endswith(".wav"):
-                    continue
-
-                fs, signal = wav.read(file_path)
-                if signal.ndim > 1:
-                    signal = signal[:, 0]  
-                signal = signal.astype(float) / 32768.0 # convert to float32 
-                signals.append((fs, signal))
-
-            data[word] = signals
-            sr[word] = fs
-
-        return data, sr
-
-    def normalize(signal):
+    def normalize(self,signal):
         return (signal / np.max(np.abs(signal)))
 
-    def pre_emphasis(signal, alpha):
+    def pre_emphasis(self,signal, alpha):
         return np.append(signal[0], signal[1:] - alpha * signal[:-1]) # y[n] = x[n] - alpha * x[n-1]
     
     # TODO
     # - Change to librosa or adjust to numpy stride 
-    def framing(signal, fs):
+    def framing(self,signal, fs):
         frame_length = int(0.02 * fs) # changed from constant to variable
         hop_length = int(0.01 * fs)
         
@@ -60,12 +30,12 @@ class VoiceUtils():
         )
         return np.array(frames)
     
-    def hamming_window(frames):
+    def hamming_window(self,frames):
         frame_length = frames.shape[1]
         window = np.hamming(frame_length)
         return frames * window[np.newaxis, :]
 
-    def detect_voice(signal, fs):
+    def detect_voice(self,signal, fs):
         frame_length = 320 # fixed to 320 points
         hop_length = 128   # fixed to 128 points
 
@@ -100,12 +70,12 @@ class VoiceUtils():
 
         return signal[start:end]
 
-    def autocorrelation(frame, p):
+    def autocorrelation(self,frame, p):
         r = np.zeros(p + 1)
         for k in range(p + 1):
             r[k] = np.sum(frame[:len(frame) - k] * frame[k:])
         return r
-    def levinson_durbin(r, p):
+    def levinson_durbin(self,r, p):
         a = np.zeros(p)
         e = r[0]
         for i in range(1, p + 1):
@@ -119,16 +89,16 @@ class VoiceUtils():
             e *= (1 - k * k)
         return np.concatenate(([1], -a)), e
 
-    def extract_lpc(frames, order=12):
+    def extract_lpc(self,frames, order=12):
         lpc_vectors, sigmas = [], []
         for frame in frames:
-            r = autocorrelation(frame, order)
-            a, s = levinson_durbin(r, order)
+            r = self.autocorrelation(frame, order)
+            a, s = self.levinson_durbin(r, order)
             lpc_vectors.append(a)
             sigmas.append(s)
         return np.array(lpc_vectors), np.array(sigmas)
 
-    def lpc_to_lsf(a):
+    def lpc_to_lsf(self,a):
         p = len(a) - 1
         a_pad = np.append(a, 0.0)
         a_rev = a_pad[::-1]
@@ -149,7 +119,7 @@ class VoiceUtils():
         
         return lsf
 
-    def lsf_to_lpc(lsf):
+    def lsf_to_lpc(self,lsf):
         lsf_sorted = np.sort(lsf)
         lsf_P = lsf_sorted[0::2]
         lsf_Q = lsf_sorted[1::2]
@@ -170,17 +140,19 @@ class VoiceUtils():
         a = 0.5 * (P_full + Q_full)
         return a[:-1]
 
-class VoiceQuantization():
-    def autocorr_lpc(a):
+class VectorialQuantization():
+    def __init__(self):
+        self.utils = VoiceUtils()
+    def autocorr_lpc(self,a):
         p = len(a) - 1
         r_a = np.zeros(p + 1)
         for i in range(p + 1):
             r_a[i] = np.sum(a[:p + 1 - i] * a[i:])
         return r_a
 
-    def itakura_saito_batch(autocorr_frames, centroids_lpc):
+    def itakura_saito_batch(self,autocorr_frames, centroids_lpc):
         p = centroids_lpc.shape[1] - 1
-        r_a_all = np.array([autocorr_lpc(a) for a in centroids_lpc])
+        r_a_all = np.array([self.autocorr_lpc(a) for a in centroids_lpc])
         weights = np.ones(p + 1)
         weights[1:] = 2.0
         # normalizar por energia del frame para quitar sesgo de amplitud
@@ -188,7 +160,7 @@ class VoiceQuantization():
         numerator = autocorr_frames[:, :p+1] @ (r_a_all * weights).T
         return numerator / r0
 
-    def lbg(lsf_P_features, lsf_Q_features, autocorr_features,
+    def lbg(self,lsf_P_features, lsf_Q_features, autocorr_features,
             codebook_size, epsilon=1e-4, max_iter=100, delta=0.01):
 
         # centroides iniciales
@@ -206,11 +178,11 @@ class VoiceQuantization():
             for _ in range(max_iter):
                 # convertir a LPC para distancia IS
                 centroids_lpc = np.array([
-                    lsf_to_lpc(np.sort(np.concatenate([cent_P[k], cent_Q[k]])))
+                    self.utils.lsf_to_lpc(np.sort(np.concatenate([cent_P[k], cent_Q[k]])))
                     for k in range(len(cent_P))
                 ])
 
-                dist_matrix = itakura_saito_batch(autocorr_features,
+                dist_matrix = self.itakura_saito_batch(autocorr_features,
                                                 centroids_lpc)
                 assignments = np.argmin(dist_matrix, axis=1)
                 total_dist  = dist_matrix[np.arange(len(dist_matrix)),
@@ -238,14 +210,14 @@ class VoiceQuantization():
         return cent_P[:codebook_size], cent_Q[:codebook_size]
 
 
-    def recognize(autocorr_frames, codebooks, word_labels):
+    def recognize(self,autocorr_frames, codebooks, word_labels):
         best_word, best_dist = None, np.inf
 
         for word in word_labels:
             cb_P, cb_Q = codebooks[word]
-            cb_lpc = np.array([lsf_to_lpc(np.sort(np.concatenate([cb_P[k], cb_Q[k]])))
+            cb_lpc = np.array([self.utils.lsf_to_lpc(np.sort(np.concatenate([cb_P[k], cb_Q[k]])))
                             for k in range(len(cb_P))])
-            total = itakura_saito_batch(autocorr_frames,
+            total = self.itakura_saito_batch(autocorr_frames,
                                         cb_lpc).min(axis=1).mean()
             if total < best_dist:
                 best_dist, best_word = total, word
