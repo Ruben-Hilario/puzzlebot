@@ -36,6 +36,9 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(DIRECTORY media/
+  DESTINATION share/${PROJECT_NAME}/media
+)
 # Install header files
 install(DIRECTORY include/
   DESTINATION include

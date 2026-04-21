@@ -34,16 +34,20 @@ def lpc_to_lsf(a):
     Convierte LPC a LSF usando raíces de polinomios P y Q.
     """
     p = len(a) - 1
-    a_rev = a[::-1]
+    a_pad = np.append(a, 0.0)
+    a_rev = a_pad[::-1]
     
-    P_poly = a + a_rev
-    Q_poly = a - a_rev
+    P_poly = a_pad + a_rev
+    Q_poly = a_pad - a_rev
     
     rP = np.roots(P_poly)
     rQ = np.roots(Q_poly)
     
-    lsf_P = np.sort(np.angle(rP[np.imag(rP) > 0]))[:p//2]
-    lsf_Q = np.sort(np.angle(rQ[np.imag(rQ) > 0]))[:p//2]
+    anglesP = np.angle(rP)
+    anglesQ = np.angle(rQ)
+    
+    lsf_P = np.sort(anglesP[(anglesP > 1e-5) & (anglesP < np.pi - 1e-5)])
+    lsf_Q = np.sort(anglesQ[(anglesQ > 1e-5) & (anglesQ < np.pi - 1e-5)])
     
     lsf = np.sort(np.concatenate([lsf_P, lsf_Q]))
     
@@ -70,11 +74,5 @@ def lsf_to_lpc(lsf):
     P_full = np.convolve(P_red, [1.0,  1.0])
     Q_full = np.convolve(Q_red, [1.0, -1.0])
 
-    n      = max(len(P_full), len(Q_full))
-    P_full = np.pad(P_full, (n - len(P_full), 0))
-    Q_full = np.pad(Q_full, (n - len(Q_full), 0))
-
     a = 0.5 * (P_full + Q_full)
-    a = a / a[0]
-    p = len(lsf)
-    return a[:p + 1]
+    return a[:-1]

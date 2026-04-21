@@ -23,13 +23,26 @@ def pre_emphasis(signal, alpha=0.95):
 
 """
 # Framing
-def framing(signal, frame_length=320, hop_length=128):
-    num_frames = int(np.floor((len(signal) - frame_length) / hop_length))
-    frames = []
-    for i in range(num_frames):
-        start = i * hop_length
-        frames.append(signal[start:start + frame_length])
-    return np.array(frames)
+# def framing(signal, frame_length=320, hop_length=128):
+#     num_frames = int(np.floor((len(signal) - frame_length) / hop_length))
+#     frames = []
+#     for i in range(num_frames):
+#         start = i * hop_length
+#         frames.append(signal[start:start + frame_length])
+#     return np.array(frames)
+
+def framing(signal, fs):
+        frame_length = 320 # fixed to 320 points as requested
+        hop_length = 128   # fixed to 128 samples as requested
+        
+        num_frames = 1 + (len(signal) - frame_length) // hop_length
+
+        frames = np.lib.stride_tricks.as_strided(
+            signal, 
+            shape=(num_frames, frame_length), 
+            strides=(signal.strides[0] * hop_length, signal.strides[0])
+        )
+        return np.array(frames)
 
 """
     La ventana de Hamming se utiliza para suavizar los extremos de cada frame, reduciendo las discontinuidades 
@@ -50,10 +63,10 @@ def hamming_window(frames):
 """
 # Deteccion inicio y fin (energia + ZCR)
 def detect_voice(signal, fs):
-    frame_length = int(0.02 * fs)
-    hop_length = int(0.01 * fs)
+    frame_length = 320 # fixed to 320 points
+    hop_length = 128   # fixed to 128 points
 
-    num_frames = int((len(signal) - frame_length) / hop_length)
+    num_frames = 1 + (len(signal) - frame_length) // hop_length
 
     zcr = []
     energy = []

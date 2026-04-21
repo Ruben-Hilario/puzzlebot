@@ -37,7 +37,7 @@ for CODEBOOK_SIZE in CODEBOOK_SIZES:
                 continue
             signal = pre_emphasis(signal)
 
-            frames = framing(signal)
+            frames = framing(signal, fs)
             if len(frames) == 0:
                 continue
 
@@ -77,7 +77,7 @@ for CODEBOOK_SIZE in CODEBOOK_SIZES:
                 continue
             signal = pre_emphasis(signal)
 
-            frames = framing(signal)
+            frames = framing(signal, fs)
             if len(frames) == 0:
                 continue
 
