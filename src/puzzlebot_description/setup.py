@@ -19,7 +19,7 @@ setup(
         ('share/' + package_name + '/models/puzzlebot/meshes', glob('models/puzzlebot/meshes/*')),
         ('share/' + package_name + '/models/track', glob('models/track/*.*')),
         ('share/' + package_name + '/models/track/meshes', glob('models/track/meshes/*')),
-
+        ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

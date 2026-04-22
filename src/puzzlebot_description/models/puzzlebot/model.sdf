@@ -21,7 +21,7 @@
             <visual name='visual'>
                 <geometry>
                     <mesh>
-                        <uri>./meshes/chassis.stl</uri>
+                        <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/chassis.stl</uri>
                         <!-- <scale> 0.15 0.15 0.15 </scale>
                         <uri>../wheelchair/meshes/base_link.stl</uri> -->
                     </mesh>
@@ -96,7 +96,7 @@
             <visual name="lidar_visual">
                 <geometry>
                 <mesh>
-                    <uri>./meshes/LiDAR.stl</uri>
+                    <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/LiDAR.stl</uri>
                     <scale>0.001 0.001 0.001</scale>
                 </mesh>
                 </geometry>
@@ -109,7 +109,7 @@
             <collision name="lidar_collision">
                 <geometry>
                 <mesh>
-                    <uri>./meshes/LiDAR.stl</uri>
+                    <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/LiDAR.stl</uri>
                     <scale>0.001 0.001 0.001</scale>
                 </mesh>
                 <!-- <cylinder>
@@ -137,7 +137,7 @@
             <visual name='visual'>
                 <geometry>
                     <mesh>
-                        <uri>./meshes/wheel.stl</uri>
+                        <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/wheel.stl</uri>
                         <!-- <scale>0.15 0.15 0.15</scale>
                         <uri>../wheelchair/meshes/right_wheel_link.stl</uri> -->
                     </mesh>
@@ -185,7 +185,7 @@
             <visual name='visual'>
                 <geometry>
                     <mesh>
-                        <uri>./meshes/wheel.stl</uri>
+                        <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/wheel.stl</uri>
                         <!-- <scale>0.15 0.15 0.15</scale>
                         <uri>../wheelchair/meshes/left_wheel_link.stl</uri> -->
                     </mesh>
@@ -324,9 +324,21 @@
             <input_type>1</input_type>
             <rate>100</rate>
         </plugin>
+
+        <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+            <topic>joint_states</topic> 
+        </plugin>
+
+        <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+            <publish_link_pose>true</publish_link_pose>
+            <use_pose_vector_msg>true</use_pose_vector_msg>
+            <static_publisher>true</static_publisher>
+            <static_update_frequency>1</static_update_frequency>
+        </plugin>
+        
         <!-- Uncomment if using for ball interactions -->
         <frame name="camera_frame" attached_to='chassis'>
-            <pose>0 0.1 0.08 0 0 0</pose>
+            <pose>0 0.1 0.08 0 0 0</pose> # y x z
         </frame>
 
         <plugin

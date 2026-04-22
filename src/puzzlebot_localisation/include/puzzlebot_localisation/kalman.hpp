@@ -6,11 +6,13 @@
 #include <nav_msgs/msg/odometry.hpp
 #include "puzzlebot_localisation/localisation.hpp"
 #include <cmath>
+#include <vector>
 
 namespace puzzlebot_localisation
 {
 
-# primera implementacion de filtro con odom, simple dead reckoning
+// Implementation for linear models
+
 class KalmanFilter
 {
 public:
@@ -19,6 +21,8 @@ private:
     void initialize(double x, double y, double theta);
     void predict(double delta_x, double delta_y, double delta_theta, double dt);
     void update(double measured_x, double measured_y, double measured_theta);
+    
+    
     Eigen::Vector3d getState() const;
     Eigen::Matrix3d getCovariance() const;
     Eigen::Vector3d state_;
@@ -28,19 +32,15 @@ private:
     Eigen::Matrix3d I_;
 };
 
-#TODO 
-# - Implementar Extended Kalman Filter para corregir con medidas del lidar
-# - Usar junto con monte carlo para comparar tracking
-
-
+/* Implementation for nonlinear models */
 class ExtendedKalman{
     public:
         ExtendedKalman();
         ~ExtendedKalman();
     private:
-        void initialize();
-        void predict();
-        void update();
+        void solveTaylor();
+        void linearization(); //Taylor Expansion  g(x) = 
+
         Eigen::Vector3d state_;
         Eigen::Matrix3d P_;
         Eigen::Matrix3d Q_;

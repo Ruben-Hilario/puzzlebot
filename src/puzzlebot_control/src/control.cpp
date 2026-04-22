@@ -69,18 +69,18 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control"),
     target_y_ = 0.0;
     has_target_ = false;
     
-    this->declare_parameter<double>("kp_linear", 0.2);
-    this->declare_parameter<double>("ki_linear", 0.01);
-    this->declare_parameter<double>("kd_linear", 0.001);
+    this->declare_parameter<double>("kp_linear", 0.1);
+    this->declare_parameter<double>("ki_linear", 0.1);
+    this->declare_parameter<double>("kd_linear", 0.1);
     
-    this->declare_parameter<double>("kp_angular", 1.2);
+    this->declare_parameter<double>("kp_angular", 0.5);
     this->declare_parameter<double>("ki_angular", 0.5);
     this->declare_parameter<double>("kd_angular", 0.2);
     
     this->declare_parameter<double>("position_tolerance", 0.05);
     this->declare_parameter<double>("angle_tolerance", 0.1);
-    this->declare_parameter<double>("max_linear_velocity", 0.5);
-    this->declare_parameter<double>("max_angular_velocity", 1.0);
+    this->declare_parameter<double>("max_linear_velocity", 0.2);
+    this->declare_parameter<double>("max_angular_velocity", 0.5);
     this->declare_parameter<double>("control_rate", 50.0);
     
     double kp_linear = this->get_parameter("kp_linear").as_double();
