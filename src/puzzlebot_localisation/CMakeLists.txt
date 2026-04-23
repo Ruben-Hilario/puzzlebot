@@ -9,9 +9,13 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
 add_executable(odom_node
@@ -19,8 +23,28 @@ add_executable(odom_node
   src/localisation.cpp
 )
 
+add_executable(kalman_node
+  src/kalman_node.cpp
+  src/kalman.cpp
+)
+
+add_executable(mcl_node
+  src/montecarlo_node.cpp
+  src/montecarlo.cpp
+)
+
 target_compile_features(odom_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(kalman_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(mcl_node PUBLIC c_std_99 cxx_std_17)
 target_include_directories(odom_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(kalman_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(mcl_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
@@ -34,13 +58,39 @@ ament_target_dependencies(odom_node
   visualization_msgs
 )
 
+ament_target_dependencies(kalman_node
+  rclcpp
+  Eigen3
+  std_msgs
+  tf2
+  tf2_geometry_msgs
+  geometry_msgs
+  nav_msgs
+)
+
+ament_target_dependencies(mcl_node
+  rclcpp
+  std_msgs
+  tf2
+  tf2_geometry_msgs
+  geometry_msgs
+  sensor_msgs
+  nav_msgs
+)
+
 install(TARGETS
   odom_node
+  kalman_node
+  mcl_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY include/
   DESTINATION include
+)
+
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
 )
 
 if(BUILD_TESTING)

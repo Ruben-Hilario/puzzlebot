@@ -164,6 +164,6 @@ def generate_launch_description():
         camera_bridge,
         lidar_bridge,
         joint_states_node,
-        joint_states_bridge,
+        #joint_states_bridge,
         rviz_node,
     ])

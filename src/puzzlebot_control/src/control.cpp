@@ -70,12 +70,12 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control"),
     has_target_ = false;
     
     this->declare_parameter<double>("kp_linear", 0.1);
-    this->declare_parameter<double>("ki_linear", 0.1);
-    this->declare_parameter<double>("kd_linear", 0.1);
+    this->declare_parameter<double>("ki_linear", 0.01);
+    this->declare_parameter<double>("kd_linear", 0.01);
     
-    this->declare_parameter<double>("kp_angular", 0.5);
-    this->declare_parameter<double>("ki_angular", 0.5);
-    this->declare_parameter<double>("kd_angular", 0.2);
+    this->declare_parameter<double>("kp_angular", 1.0);
+    this->declare_parameter<double>("ki_angular", 0.01);
+    this->declare_parameter<double>("kd_angular", 0.01);
     
     this->declare_parameter<double>("position_tolerance", 0.05);
     this->declare_parameter<double>("angle_tolerance", 0.1);

@@ -3,12 +3,24 @@ import scipy
 #import lisbrosa
 
 class VoiceUtils():
+    """ 
+        La normalización de la señal se realiza para eliminar variaciones en la amplitud debidas a condiciones de
+        grabación, garantizando que las características extraídas dependan únicamente de la forma espectral de la
+        señal y no de su intensidad
+    """
     def normalize(self,signal):
         return (signal / np.max(np.abs(signal)))
-
+    """
+        El filtro de pre-énfasis se utiliza para compensar la caída espectral natural de la voz humana, la cual 
+        presenta mayor energía en bajas frecuencias.
+    """
     def pre_emphasis(self,signal, alpha):
         return np.append(signal[0], signal[1:] - alpha * signal[:-1]) # y[n] = x[n] - alpha * x[n-1]
-    
+    """
+        El proceso de framing consiste en dividir la señal de audio en segmentos más pequeños, llamados frames, que
+        son lo suficientemente cortos para suponer que la señal es estacionaria dentro de cada frame. 
+
+    """
     # TODO
     # - Change to librosa or adjust to numpy stride 
     def framing(self,signal, fs):
@@ -30,11 +42,20 @@ class VoiceUtils():
         )
         return np.array(frames)
     
+    """
+        La ventana de Hamming se utiliza para suavizar los extremos de cada frame, reduciendo las discontinuidades 
+        introducidas por el truncamiento de la señal. Esto mejora la estimación espectral y evita efectos no deseados 
+        en el cálculo de características como la autocorrelación y los coeficientes LPC
+    """
     def hamming_window(self,frames):
         frame_length = frames.shape[1]
         window = np.hamming(frame_length)
         return frames * window[np.newaxis, :]
 
+    """
+        Esta parte nos permite eliminar segmentos de silencio y ruidos presentes en la se;al original, conservando
+        unicamente las partes que continen la porsion donde existe actividad de voz.
+    """
     def detect_voice(self,signal, fs):
         frame_length = 320 # fixed to 320 points
         hop_length = 128   # fixed to 128 points
@@ -70,6 +91,7 @@ class VoiceUtils():
 
         return signal[start:end]
 
+    
     def autocorrelation(self,frame, p):
         r = np.zeros(p + 1)
         for k in range(p + 1):
