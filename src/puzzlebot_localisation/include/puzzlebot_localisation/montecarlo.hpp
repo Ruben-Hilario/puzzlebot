@@ -8,10 +8,13 @@
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <cstdlib>
 #include <cmath>
 #include <vector>
 #include <random>
+#include <algorithm>
 
 struct Particle {
     double x, y, theta;
@@ -26,27 +29,37 @@ public:
     ~MonteCarlo();
 
 private:
-    void laserCb(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+    void scanCb(const sensor_msgs::msg::LaserScan::SharedPtr msg);
     void odomCb(const nav_msgs::msg::Odometry::SharedPtr msg);
     void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
 
+    void buildMap(const Particle& best_p, const sensor_msgs::msg::LaserScan::SharedPtr scan);
+    double get_yaw_from_quat(const geometry_msgs::msg::Quaternion& q);
     void motionModel(double delta_x, double delta_y, double delta_theta);
     void sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg);
-    void resample();
-    void buildMap(const sensor_msgs::msg::LaserScan::SharedPtr msg, const Particle& best_particle);
+    std::vector<std::pair<int, int>> get_line_cells(int x0, int y0, int x1, int y1);
+        
+    void publish_transform(const Particle& best_p, const nav_msgs::msg::Odometry::SharedPtr odom_msg);
     void publishParticlesAndPose();
+    void publish_map();
 
-    std::vector<Particle> particles_;
-    int num_particles_;
-    std::mt19937 gen_; //std::mt19random_engine gen_;
     
+    int num_particles_;
+    double map_res_ = 0.01;
+    int map_width_ = 2000;  // 200m at 0.01 res = 2000 cells
+    int map_height_ = 2000;
+    double map_origin_x_;
+    double map_origin_y_;
+    std::vector<Particle> particles_;
+    std::vector<int8_t> grid_;
+    std::mt19937 gen_; //std::mt19random_engine gen
+        
     // Map
     nav_msgs::msg::OccupancyGrid map_;
     bool map_received_;
     
     // Odometry tracking
-    bool first_odom_;
-    double last_odom_x_, last_odom_y_, last_odom_theta_;
+    nav_msgs::msg::Odometry::SharedPtr last_odom_;
 
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -55,6 +68,8 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particle_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
+
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 };  
 
 }

@@ -3,44 +3,158 @@
 
 namespace montecarlo_mapping {
 
-MonteCarlo::MonteCarlo() : Node("montecarlo_node"), num_particles_(100), map_received_(false), first_odom_(true) {
-    RCLCPP_INFO(this->get_logger(), "Monte Carlo node started.");
-    
-    // Initialize particles uniformly around origin for now
-    std::normal_distribution<double> dist_pos(0.0, 0.5);
-    std::normal_distribution<double> dist_theta(0.0, 0.1);
-    
-    particles_.resize(num_particles_);
-    for (int i = 0; i < num_particles_; i++) {
-        particles_[i].x = dist_pos(gen_);
-        particles_[i].y = dist_pos(gen_);
-        particles_[i].theta = dist_theta(gen_);
-        particles_[i].weight = 1.0 / num_particles_;
-    }
+MonteCarlo::MonteCarlo() : Node("monte_carlo_slam_node") {
+    // Quality of Service
+    auto qos = rclcpp::SensorDataQoS();
 
-    auto qos = rclcpp::QoS(rclcpp::SystemDefaultsQoS());
+    // Subscribers & Publishers
     scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan", qos, std::bind(&MonteCarlo::laserCb, this, std::placeholders::_1));
+        "/scan", qos, std::bind(&MonteCarlo::scanCb, this, std::placeholders::_1));
+    
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "odom", qos, std::bind(&MonteCarlo::odomCb, this, std::placeholders::_1));
-    map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-        "map", qos, std::bind(&MonteCarlo::mapCb, this, std::placeholders::_1));
+        "/odom", qos, std::bind(&MonteCarlo::odomCb, this, std::placeholders::_1));
 
-    particle_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("particlecloud", qos);
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("amcl_pose", qos);
-    map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map", qos);
+    /*
+    map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+        "/map", qos, std::bind(&MonteCarlo::mapCb, this, std::placeholders::_1)
+    );
+    */
 
-    // Initialize an empty map for building
-    map_.header.frame_id = "map";
-    map_.info.resolution = 0.05; // 5cm per pixel
-    map_.info.width = 400;
-    map_.info.height = 400;
-    map_.info.origin.position.x = -10.0;
-    map_.info.origin.position.y = -10.0;
-    map_.data.assign(map_.info.width * map_.info.height, -1); // Unknown
+    map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
+    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
+    // Initialize Map
+    map_origin_x_ = -(map_width_ * map_res_) / 2.0;
+    map_origin_y_ = -(map_height_ * map_res_) / 2.0;
+    grid_.assign(map_width_ * map_height_, -1); // Initialize as unknown
+
+    // Initialize Particles
+    double initial_weight = 1.0 / num_particles_;
+    for (int i = 0; i < num_particles_; ++i) {
+        particles_.push_back({0.0, 0.0, 0.0, initial_weight});
+    }
 }
 
 MonteCarlo::~MonteCarlo() {}
+
+void MonteCarlo::odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
+    last_odom_ = msg;
+    
+    // Prediction Step
+    std::normal_distribution<double> dist_pos(0.0, 0.01);
+    std::normal_distribution<double> dist_rot(0.0, 0.005);
+
+    double dx = msg->twist.twist.linear.x * 0.1;
+    double dy = msg->twist.twist.linear.y * 0.1;
+    double da = msg->twist.twist.angular.z * 0.1;
+
+    for (auto& p : particles_) {
+        p.x += dx + dist_pos(gen_);
+        p.y += dy + dist_pos(gen_);
+        p.theta += da + dist_rot(gen_);
+    }
+}
+
+void MonteCarlo::scanCb(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+    if (!last_odom_) {
+        RCLCPP_WARN(this->get_logger(), "Waiting for odometry...");
+        return;
+    }
+
+    // 1. Find Best Particle (highest weight)
+    auto best_it = std::max_element(particles_.begin(), particles_.end(), 
+        [](const Particle& a, const Particle& b) { return a.weight < b.weight; });
+    
+    // 2. Mapping
+    buildMap(*best_it, msg);
+
+    // 3. TF & Map Publish
+    publish_transform(*best_it, last_odom_);
+    publish_map();
+}
+
+void MonteCarlo::buildMap(const Particle& pose, const sensor_msgs::msg::LaserScan::SharedPtr scan) {
+    int start_x = static_cast<int>((pose.x - map_origin_x_) / map_res_);
+    int start_y = static_cast<int>((pose.y - map_origin_y_) / map_res_);
+
+    for (size_t i = 0; i < scan->ranges.size(); ++i) {
+        double dist = scan->ranges[i];
+        if (dist > scan->range_max || dist < scan->range_min) continue;
+
+        double angle = pose.theta + scan->angle_min + (i * scan->angle_increment);
+        int end_x = static_cast<int>((pose.x + dist * std::cos(angle) - map_origin_x_) / map_res_);
+        int end_y = static_cast<int>((pose.y + dist * std::sin(angle) - map_origin_y_) / map_res_);
+
+        // Bresenham to clear space
+        auto ray_cells = get_line_cells(start_x, start_y, end_x, end_y);
+        for (size_t j = 0; j < ray_cells.size(); ++j) {
+            int cx = ray_cells[j].first;
+            int cy = ray_cells[j].second;
+
+            if (cx >= 0 && cx < map_width_ && cy >= 0 && cy < map_height_) {
+                // Last cell in ray is occupied, others are free
+                grid_[cy * map_width_ + cx] = (j == ray_cells.size() - 1) ? 100 : 0;
+            }
+        }
+    }
+}
+
+std::vector<std::pair<int, int>> MonteCarlo::get_line_cells(int x0, int y0, int x1, int y1) {
+    std::vector<std::pair<int, int>> cells;
+    int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy, e2;
+
+    while (true) {
+        cells.push_back({x0, y0});
+        if (x0 == x1 && y0 == y1) break;
+        e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+    return cells;
+}
+
+void MonteCarlo::publish_transform(const Particle& best_p, const nav_msgs::msg::Odometry::SharedPtr odom_msg) {
+    geometry_msgs::msg::TransformStamped t;
+    t.header.stamp = this->get_clock()->now();
+    t.header.frame_id = "map";
+    t.child_frame_id = "odom";
+
+    t.transform.translation.x = best_p.x - odom_msg->pose.pose.position.x;
+    t.transform.translation.y = best_p.y - odom_msg->pose.pose.position.y;
+    t.transform.translation.z = 0.0;
+
+    tf2::Quaternion q;
+    q.setRPY(0, 0, best_p.theta - get_yaw_from_quat(odom_msg->pose.pose.orientation));
+    t.transform.rotation.x = q.x();
+    t.transform.rotation.y = q.y();
+    t.transform.rotation.z = q.z();
+    t.transform.rotation.w = q.w();
+
+    tf_broadcaster_->sendTransform(t);
+}
+
+void MonteCarlo::publish_map() {
+    nav_msgs::msg::OccupancyGrid msg;
+    msg.header.stamp = this->get_clock()->now();
+    msg.header.frame_id = "map";
+    msg.info.resolution = map_res_;
+    msg.info.width = map_width_;
+    msg.info.height = map_height_;
+    msg.info.origin.position.x = map_origin_x_;
+    msg.info.origin.position.y = map_origin_y_;
+    msg.data = grid_;
+    map_pub_->publish(msg);
+}
+
+double MonteCarlo::get_yaw_from_quat(const geometry_msgs::msg::Quaternion& q) {
+    double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
+    double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
+    return std::atan2(siny_cosp, cosy_cosp);
+}
+
+/*
 
 void MonteCarlo::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     map_ = *msg;
@@ -48,48 +162,6 @@ void MonteCarlo::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Received map.");
 }
 
-void MonteCarlo::odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
-    double current_x = msg->pose.pose.position.x;
-    double current_y = msg->pose.pose.position.y;
-    
-    tf2::Quaternion q(
-        msg->pose.pose.orientation.x,
-        msg->pose.pose.orientation.y,
-        msg->pose.pose.orientation.z,
-        msg->pose.pose.orientation.w);
-    tf2::Matrix3x3 m(q);
-    double roll, pitch, current_theta;
-    m.getRPY(roll, pitch, current_theta);
-
-    if (first_odom_) {
-        last_odom_x_ = current_x;
-        last_odom_y_ = current_y;
-        last_odom_theta_ = current_theta;
-        first_odom_ = false;
-        return;
-    }
-
-    double dx = current_x - last_odom_x_;
-    double dy = current_y - last_odom_y_;
-    double dtheta = current_theta - last_odom_theta_;
-    
-    dtheta = std::atan2(std::sin(dtheta), std::cos(dtheta));
-
-    // Convert diff to robot local frame
-    double trans = std::sqrt(dx*dx + dy*dy);
-    double rot1 = std::atan2(dy, dx) - last_odom_theta_;
-    rot1 = std::atan2(std::sin(rot1), std::cos(rot1));
-    double rot2 = dtheta - rot1;
-    rot2 = std::atan2(std::sin(rot2), std::cos(rot2));
-
-    motionModel(rot1, trans, rot2);
-
-    last_odom_x_ = current_x;
-    last_odom_y_ = current_y;
-    last_odom_theta_ = current_theta;
-
-    publishParticlesAndPose();
-}
 
 void MonteCarlo::motionModel(double rot1, double trans, double rot2) {
     if (std::abs(trans) < 1e-3 && std::abs(rot1) < 1e-3 && std::abs(rot2) < 1e-3) return;
@@ -110,19 +182,6 @@ void MonteCarlo::motionModel(double rot1, double trans, double rot2) {
         p.theta += r1_hat + r2_hat;
         p.theta = std::atan2(std::sin(p.theta), std::cos(p.theta));
     }
-}
-
-void MonteCarlo::laserCb(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-    if (!map_received_) {
-        // Build map incrementally using best particle (Particle 0 usually or weighted avg)
-        // We'll use the first particle as reference if no map exists
-        buildMap(msg, particles_[0]);
-        map_pub_->publish(map_);
-    }
-
-    sensorModel(msg);
-    resample();
-    publishParticlesAndPose();
 }
 
 void MonteCarlo::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
@@ -175,96 +234,6 @@ void MonteCarlo::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
         }
     }
 }
-
-void MonteCarlo::resample() {
-    std::vector<Particle> new_particles;
-    new_particles.resize(num_particles_);
-    
-    std::uniform_real_distribution<double> unif(0.0, 1.0 / num_particles_);
-    double r = unif(gen_);
-    double c = particles_[0].weight;
-    int i = 0;
-
-    for (int m = 0; m < num_particles_; m++) {
-        double u = r + m * (1.0 / num_particles_);
-        while (u > c) {
-            i = (i + 1) % num_particles_;
-            c += particles_[i].weight;
-        }
-        new_particles[m] = particles_[i];
-        new_particles[m].weight = 1.0 / num_particles_;
-    }
-
-    particles_ = new_particles;
-}
-
-void MonteCarlo::buildMap(const sensor_msgs::msg::LaserScan::SharedPtr msg, const Particle& best_particle) {
-    // Simple incremental map building
-    for (size_t i = 0; i < msg->ranges.size(); i++) {
-        double r = msg->ranges[i];
-        if (std::isnan(r) || r >= msg->range_max || r <= msg->range_min) continue;
-
-        double angle = best_particle.theta + msg->angle_min + i * msg->angle_increment;
-        double hit_x = best_particle.x + r * std::cos(angle);
-        double hit_y = best_particle.y + r * std::sin(angle);
-
-        int mx = (hit_x - map_.info.origin.position.x) / map_.info.resolution;
-        int my = (hit_y - map_.info.origin.position.y) / map_.info.resolution;
-
-        if (mx >= 0 && mx < (int)map_.info.width && my >= 0 && my < (int)map_.info.height) {
-            map_.data[my * map_.info.width + mx] = 100; // Mark occupied
-        }
-    }
-    map_.header.stamp = this->get_clock()->now();
-}
-
-void MonteCarlo::publishParticlesAndPose() {
-    geometry_msgs::msg::PoseArray pa;
-    pa.header.stamp = this->get_clock()->now();
-    pa.header.frame_id = "map";
-
-    double avg_x = 0.0, avg_y = 0.0, avg_theta_sin = 0.0, avg_theta_cos = 0.0;
-    
-    for (const auto& p : particles_) {
-        geometry_msgs::msg::Pose pose;
-        pose.position.x = p.x;
-        pose.position.y = p.y;
-        tf2::Quaternion q;
-        q.setRPY(0, 0, p.theta);
-        pose.orientation.x = q.x();
-        pose.orientation.y = q.y();
-        pose.orientation.z = q.z();
-        pose.orientation.w = q.w();
-        pa.poses.push_back(pose);
-
-        avg_x += p.x * p.weight;
-        avg_y += p.y * p.weight;
-        avg_theta_sin += std::sin(p.theta) * p.weight;
-        avg_theta_cos += std::cos(p.theta) * p.weight;
-    }
-
-    particle_pub_->publish(pa);
-
-    double avg_theta = std::atan2(avg_theta_sin, avg_theta_cos);
-
-    geometry_msgs::msg::PoseWithCovarianceStamped amcl_pose;
-    amcl_pose.header.stamp = pa.header.stamp;
-    amcl_pose.header.frame_id = "map";
-    amcl_pose.pose.pose.position.x = avg_x;
-    amcl_pose.pose.pose.position.y = avg_y;
-    tf2::Quaternion q_avg;
-    q_avg.setRPY(0, 0, avg_theta);
-    amcl_pose.pose.pose.orientation.x = q_avg.x();
-    amcl_pose.pose.pose.orientation.y = q_avg.y();
-    amcl_pose.pose.pose.orientation.z = q_avg.z();
-    amcl_pose.pose.pose.orientation.w = q_avg.w();
-    
-    // Setting simple covariance
-    amcl_pose.pose.covariance[0] = 0.1;
-    amcl_pose.pose.covariance[7] = 0.1;
-    amcl_pose.pose.covariance[35] = 0.1;
-
-    pose_pub_->publish(amcl_pose);
-}
+*/
 
 } // namespace montecarlo_mapping

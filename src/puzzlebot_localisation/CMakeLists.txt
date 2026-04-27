@@ -7,6 +7,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -87,6 +88,11 @@ install(TARGETS
 
 install(DIRECTORY include/
   DESTINATION include
+)
+
+file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py")
+install(PROGRAMS ${python_scripts}
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY launch/

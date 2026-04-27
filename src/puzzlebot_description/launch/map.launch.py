@@ -24,6 +24,7 @@ def generate_launch_description():
     gazebo_path = get_package_share_directory('puzzlebot_description') + '/models/' #"/home/testeo/src/puzzlebot_description/models/"
     robot_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
     rviz_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.rviz'
+    rviz_map = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
 
     # Environment Variables
     ign_resource_path = SetEnvironmentVariable(
@@ -104,9 +105,11 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d',rviz_path],
+        #arguments=['-d',rviz_path],
+        arguments = ['-d',rviz_map],
         parameters=[{'use_sim_time':use_sim_time}]
     )
+
 
     return LaunchDescription([
         *ARGUMENTS,

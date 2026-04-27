@@ -55,10 +55,10 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control"),
     square_mode_(true),
     square_waypoint_index_(0),
     square_waypoints_({
-        {1.0, 0.0},
-        {1.0, 1.0},
-        {0.0, 1.0},
-        {0.0, 0.0}
+        {2.8, 0.0},
+        {2.8, 8.0},
+        {5.0, -3.5},
+        {4.0, -5.0}
     }) {
     current_x_ = 0.0;
     current_y_ = 0.0;
@@ -73,8 +73,8 @@ PuzzlebotControl::PuzzlebotControl() : Node("puzzlebot_control"),
     this->declare_parameter<double>("ki_linear", 0.01);
     this->declare_parameter<double>("kd_linear", 0.01);
     
-    this->declare_parameter<double>("kp_angular", 1.0);
-    this->declare_parameter<double>("ki_angular", 0.01);
+    this->declare_parameter<double>("kp_angular", 2.5);
+    this->declare_parameter<double>("ki_angular", 0.1);
     this->declare_parameter<double>("kd_angular", 0.01);
     
     this->declare_parameter<double>("position_tolerance", 0.05);
