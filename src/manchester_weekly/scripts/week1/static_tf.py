@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #Node file, must go in src or scripts if usied whithin a cmake env
 import rclpy
 from rclpy.node import Node

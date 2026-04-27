@@ -138,7 +138,7 @@ install(DIRECTORY rviz/
  DESTINATION share/${PROJECT_NAME}/rviz
 )
 
-file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py")
+file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/week/*.py")
 install(PROGRAMS ${python_scripts}
   DESTINATION lib/${PROJECT_NAME}
 )
