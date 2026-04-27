@@ -32,7 +32,7 @@ def generate_launch_description():
         name='GZ_SIM_RESOURCE_PATH',
         value=[os.path.join(pkg_gazebo, 'models') + ':' + gazebo_path + ':' + '$GZ_SIM_RESOURCE_PATH']
     )
-    
+
     ign_gui_plugin_path = SetEnvironmentVariable(
         name='GZ_SIM_SYSTEM_PLUGIN_PATH',
         value=[os.path.join(pkg_gazebo, 'models/plugins') + ':' + '$GZ_SIM_SYSTEM_PLUGIN_PATH']
@@ -112,7 +112,7 @@ def generate_launch_description():
             ['/world/', world,'/model/', robot_name,'/link/chassis/sensor/rplidar/scan'],'scan'
         )]
     )
-    
+
     # Launch Ignition Gazebo
     ignition_gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ign_gazebo_launch]),
@@ -140,18 +140,26 @@ def generate_launch_description():
              'use_sim_time': use_sim_time}
         ]
     )
-    joint_states_bridge = Node(
-        package='ros_gz_bridge',
-        executable='parameter_bridge',
-        name='joint_states_bridge',
+
+    # joint_states_bridge = Node(
+    #     package='ros_gz_bridge',
+    #     executable='parameter_bridge',
+    #     name='joint_states_bridge',
+    #     output='screen',
+    #     parameters=[{'use_sim_time': use_sim_time}],
+    #     arguments=[
+    #         '/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model'  # ← gz.msgs.Model
+    #     ]
+    # )
+
+    
+
+    odom_node = Node(
+        package='puzzlebot_description',
+        executable='joint_pub',
+        name='odometry_node',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
-        arguments=[
-            ['/world/', world, '/model/', robot_name, '/joint_state@sensor_msgs/msg/JointState[gz.msgs.JointState']
-        ],
-        remappings=[
-            (['/world/', world, '/model/', robot_name, '/joint_state'], '/joint_states')
-        ]
+        parameters=[{'use_sim_time': use_sim_time}]
     )
 
     return LaunchDescription([
@@ -166,4 +174,5 @@ def generate_launch_description():
         joint_states_node,
         #joint_states_bridge,
         rviz_node,
+        odom_node
     ])

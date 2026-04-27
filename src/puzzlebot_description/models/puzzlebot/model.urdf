@@ -56,14 +56,14 @@
     </collision>
   </link>
 
-  <link name="left_wheel">
+ <link name="left_wheel">
     <inertial>
-      <mass value="0.05"/>
-      <origin xyz="0.055 0.085 0.05"  />
-      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
+      <mass value="0.05"/> 
+      <origin rpy="0 1.5708 -1.5708" xyz="0.0 0.0 0.0" />
+      <inertia ixx="0.002" ixy="0.0" ixz="0.0" iyy="0.002" iyz="0.0" izz="0.002"/>
     </inertial>
     <visual>
-      <origin xyz="0.055 0.085 0.05" rpy="-1.57 0 0" />
+      <origin rpy="0 1.5708 -1.5708" xyz="0.0 0.0 0.0"/>
       <geometry>
         <mesh filename="package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl"/>
       </geometry>
@@ -72,7 +72,7 @@
       </material>
     </visual>
     <collision>
-      <origin xyz="0.055 0.085 0.05" rpy="-1.57 0 0" />
+      <origin rpy="0 1.5708 -1.5708" xyz="0.0 0.0 0.0" />
       <geometry>
         <mesh filename="package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl"/>
       </geometry>
@@ -89,12 +89,12 @@
 
   <link name="right_wheel">
     <inertial>
-      <mass value="0.05"/>
-      <origin xyz="0.055 -0.085 0.05" />
-      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
+      <mass value="0.05"/> 
+      <origin rpy="0 -1.5708 -1.5708" xyz="0.0 0.0 0.0" />
+      <inertia ixx="0.002" ixy="0.0" ixz="0.0" iyy="0.002" iyz="0.0" izz="0.002"/>
     </inertial>
     <visual>
-      <origin xyz="0.055 -0.085 0.05" rpy="1.57 0 0" />
+      <origin rpy="0 -1.5708 -1.5708" xyz="0.0 0.0 0.0"/>
       <geometry>
         <mesh filename="package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl"/>
       </geometry>
@@ -103,7 +103,7 @@
       </material>
     </visual>
     <collision>
-      <origin xyz="0.055 -0.085 0.05" rpy="1.57 0 0" />
+      <origin rpy="0 -1.5708 -1.5708" xyz="0.0 0.0 0.0" />
       <geometry>
         <mesh filename="package://puzzlebot_description/models/puzzlebot/meshes/wheel.stl"/>
       </geometry>
@@ -217,23 +217,22 @@
     <child link='lidar_link'/>
     <origin xyz="0.045 0 0.138" rpy="0 0 0"/>
   </joint>
-  <joint name="left_wheel_joint" type="revolute">
+
+  <joint name="left_wheel_joint" type="continuous">
     <parent link="chassis"/>
     <child link="left_wheel"/>
-    <origin xyz="0.052 0.095 -0.0025" rpy="0 0 0"/>
+     <origin xyz="0.05 0.09 0.05" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="-1.79769e+308" upper="1.79769e+308" effort="1" velocity="6"/>
-    <dynamics friction="0.1"/>
   </joint>
-  <joint name="right_wheel_joint" type="revolute">
+
+  <joint name="right_wheel_joint" type="continuous">
     <parent link="chassis"/>
     <child link="right_wheel"/>
-    <origin xyz="0.052 -0.095 -0.0025" rpy="0 0 0"/>
+    <origin xyz="0.05 -0.09 0.05" rpy="0 0 0"/> 
     <axis xyz="0 1 0"/>
-    <limit lower="-1.79769e+308" upper="1.79769e+308" effort="1" velocity="6"/>
-    <dynamics friction="0.1"/>
   </joint>  
 
+  
 
   <gazebo reference="camera_link">
     <sensor name="camera" type="camera">
@@ -254,3 +253,5 @@
       </sensor>
   </gazebo>
 </robot>
+
+
