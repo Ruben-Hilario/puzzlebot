@@ -22,6 +22,8 @@ MonteCarlo::MonteCarlo() : Node("monte_carlo_slam_node") {
 
     map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    save_map_srv_ = this->create_service<std_srvs::srv::Empty>(
+        "save_map", std::bind(&MonteCarlo::saveMapSrv, this, std::placeholders::_1, std::placeholders::_2));
 
     // Initialize Map
     map_origin_x_ = -(map_width_ * map_res_) / 2.0;
@@ -35,7 +37,12 @@ MonteCarlo::MonteCarlo() : Node("monte_carlo_slam_node") {
     }
 }
 
-MonteCarlo::~MonteCarlo() {}
+MonteCarlo::~MonteCarlo() {
+    if (!grid_.empty()) {
+        RCLCPP_INFO(this->get_logger(), "Node shutting down: saving occupancy grid map.");
+        saveMap();
+    }
+}
 
 void MonteCarlo::odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
     last_odom_ = msg;
@@ -44,9 +51,14 @@ void MonteCarlo::odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
     std::normal_distribution<double> dist_pos(0.0, 0.01);
     std::normal_distribution<double> dist_rot(0.0, 0.005);
 
-    double dx = msg->twist.twist.linear.x * 0.1;
-    double dy = msg->twist.twist.linear.y * 0.1;
-    double da = msg->twist.twist.angular.z * 0.1;
+    double dx = msg->twist.twist.linear.x * dt;
+    double dy = msg->twist.twist.linear.y * dt;
+    double da = msg->twist.twist.angular.z * dt;
+
+    // Only update particles if the robot is actually moving
+    if (std::abs(dx) < 1e-4 && std::abs(dy) < 1e-4 && std::abs(da) < 1e-4) {
+        return; 
+    }
 
     for (auto& p : particles_) {
         p.x += dx + dist_pos(gen_);
@@ -81,9 +93,10 @@ void MonteCarlo::buildMap(const Particle& pose, const sensor_msgs::msg::LaserSca
         double dist = scan->ranges[i];
         if (dist > scan->range_max || dist < scan->range_min) continue;
 
-        double angle = pose.theta + scan->angle_min + (i * scan->angle_increment);
-        int end_x = static_cast<int>((pose.x + dist * std::cos(angle) - map_origin_x_) / map_res_);
-        int end_y = static_cast<int>((pose.y + dist * std::sin(angle) - map_origin_y_) / map_res_);
+//        double angle = pose.theta + scan->angle_min + (i * scan->angle_increment);
+        double angle = pose.theta - (scan->angle_min + (i * scan->angle_increment));
+        int end_x = static_cast<int>((pose.x - dist * std::cos(angle) - map_origin_x_) / map_res_);
+        int end_y = static_cast<int>((pose.y - dist * std::sin(angle) - map_origin_y_) / map_res_);
 
         // Bresenham to clear space
         auto ray_cells = get_line_cells(start_x, start_y, end_x, end_y);
@@ -93,6 +106,7 @@ void MonteCarlo::buildMap(const Particle& pose, const sensor_msgs::msg::LaserSca
 
             if (cx >= 0 && cx < map_width_ && cy >= 0 && cy < map_height_) {
                 // Last cell in ray is occupied, others are free
+                
                 grid_[cy * map_width_ + cx] = (j == ray_cells.size() - 1) ? 100 : 0;
             }
         }
@@ -121,12 +135,18 @@ void MonteCarlo::publish_transform(const Particle& best_p, const nav_msgs::msg::
     t.header.frame_id = "map";
     t.child_frame_id = "odom";
 
-    t.transform.translation.x = best_p.x - odom_msg->pose.pose.position.x;
-    t.transform.translation.y = best_p.y - odom_msg->pose.pose.position.y;
+    double odom_theta = get_yaw_from_quat(odom_msg->pose.pose.orientation);
+    double delta_theta = best_p.theta - odom_theta;
+    double odom_x = odom_msg->pose.pose.position.x;
+    double odom_y = odom_msg->pose.pose.position.y;
+
+    // Correctly apply rotation matrix for T_map_odom translation
+    t.transform.translation.x = best_p.x - (odom_x * std::cos(delta_theta) - odom_y * std::sin(delta_theta));
+    t.transform.translation.y = best_p.y - (odom_x * std::sin(delta_theta) + odom_y * std::cos(delta_theta));
     t.transform.translation.z = 0.0;
 
     tf2::Quaternion q;
-    q.setRPY(0, 0, best_p.theta - get_yaw_from_quat(odom_msg->pose.pose.orientation));
+    q.setRPY(0, 0, delta_theta);
     t.transform.rotation.x = q.x();
     t.transform.rotation.y = q.y();
     t.transform.rotation.z = q.z();
@@ -152,6 +172,57 @@ double MonteCarlo::get_yaw_from_quat(const geometry_msgs::msg::Quaternion& q) {
     double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
     double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
     return std::atan2(siny_cosp, cosy_cosp);
+}
+
+void MonteCarlo::saveMap() {
+    std::string pgm_filename = map_name + ".pgm";
+    std::string yaml_filename = map_name + ".yaml";
+
+    // 1. Save the PGM Image File
+    std::ofstream pgm_file(pgm_filename, std::ios::out | std::ios::binary);
+    if (!pgm_file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open %s for writing", pgm_filename.c_str());
+        return;
+    }
+
+    // PGM Header: P5 (binary), Width, Height, Max Value (255)
+    pgm_file << "P5\n" << map_width_ << " " << map_height_ << "\n255\n";
+
+    for (int y = map_height_ - 1; y >= 0; --y) { // PGM is top-to-bottom
+        for (int x = 0; x < map_width_; ++x) {
+            int8_t occupancy_value = grid_[y * map_width_ + x];
+            unsigned char pgm_pixel;
+
+            if (occupancy_value == 100)      pgm_pixel = 0;   // Occupied (Black)
+            else if (occupancy_value == 0)   pgm_pixel = 254; // Free (White)
+            else                             pgm_pixel = 205; // Unknown (Gray)
+
+            pgm_file.put(pgm_pixel);
+        }
+    }
+    pgm_file.close();
+
+    // 2. Save the YAML Metadata File
+    std::ofstream yaml_file(yaml_filename);
+    if (!yaml_file.is_open()) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open %s for writing", yaml_filename.c_str());
+        return;
+    }
+
+    yaml_file << "image: " << pgm_filename << "\n";
+    yaml_file << "resolution: " << map_res_ << "\n";
+    yaml_file << "origin: [" << map_origin_x_ << ", " << map_origin_y_ << ", 0.0]\n";
+    yaml_file << "negate: 0\n";
+    yaml_file << "occupied_thresh: 0.65\n";
+    yaml_file << "free_thresh: 0.196\n";
+    yaml_file.close();
+
+    RCLCPP_INFO(this->get_logger(), "Map saved successfully to %s and %s", pgm_filename.c_str(), yaml_filename.c_str());
+}
+
+void MonteCarlo::saveMapSrv(const std::shared_ptr<std_srvs::srv::Empty::Request>,
+                            std::shared_ptr<std_srvs::srv::Empty::Response>) {
+    this->saveMap();
 }
 
 /*
@@ -183,7 +254,7 @@ void MonteCarlo::motionModel(double rot1, double trans, double rot2) {
         p.theta = std::atan2(std::sin(p.theta), std::cos(p.theta));
     }
 }
-
+*/
 void MonteCarlo::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
     double total_weight = 0.0;
     double max_range = msg->range_max;
@@ -234,6 +305,6 @@ void MonteCarlo::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
         }
     }
 }
-*/
+
 
 } // namespace montecarlo_mapping

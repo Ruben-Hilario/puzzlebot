@@ -3,4 +3,6 @@ sudo apt-get install ros-humble-rqt-tf-tree
 sudo apt-get install ros-humble-teleop-twist-keyboard
 sudo apt-get install python3-sklearn
 sudo apt-get install python3-scipy
+sudo apt-get install ros-humble-nav2-map-server
+sudo apt-get install imagemagick
 ./clone.sh

@@ -59,6 +59,17 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr ekf_pub_;
 };
 
+class UnscentedKalman : public rclcpp::Node{
+public:
+    UnscentedKalman();
+    ~UnscentedKalman();
+private:
+    void OdomCb(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void poseCb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+    void predictUKF(double v, double omega, double dt);
+    void updateUKF(double z_x, double z_y, double z_theta);
+};
+
 }
 
 #endif  // KALMAN_HPP

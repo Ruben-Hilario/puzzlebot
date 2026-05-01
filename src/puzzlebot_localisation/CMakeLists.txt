@@ -18,6 +18,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 add_executable(odom_node
   src/localisation_node.cpp
@@ -34,9 +35,22 @@ add_executable(mcl_node
   src/montecarlo.cpp
 )
 
+add_executable(route_node
+  src/route_node.cpp
+  src/utils.cpp
+)
+
+add_executable(map_publisher
+  src/map_publisher.cpp
+  src/utils.cpp
+)
+
 target_compile_features(odom_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(kalman_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(mcl_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(route_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(route_node PUBLIC c_std_99 cxx_std_17)
+target_compile_features(map_publisher PUBLIC c_std_99 cxx_std_17)
 target_include_directories(odom_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -46,6 +60,14 @@ target_include_directories(kalman_node PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 target_include_directories(mcl_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(route_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_include_directories(map_publisher PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
@@ -77,12 +99,26 @@ ament_target_dependencies(mcl_node
   geometry_msgs
   sensor_msgs
   nav_msgs
+  std_srvs
+)
+
+ament_target_dependencies(route_node
+  rclcpp
+  nav_msgs
+  geometry_msgs 
+)
+
+ament_target_dependencies(map_publisher
+  rclcpp
+  nav_msgs
 )
 
 install(TARGETS
   odom_node
   kalman_node
   mcl_node
+  route_node
+  map_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 

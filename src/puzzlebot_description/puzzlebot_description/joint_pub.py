@@ -39,7 +39,7 @@ class PuzzleBotOdom(Node):
         # Publisher de joint_states (para robot_state_publisher)
         self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
 
-        self.create_timer(0.01, self.update)  # 100 Hz
+        self.create_timer(0.001, self.update)  # 100 Hz
 
     def cb_r(self, msg): self.wr = msg.data
     def cb_l(self, msg): self.wl = msg.data

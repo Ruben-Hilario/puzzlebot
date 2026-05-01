@@ -67,11 +67,11 @@
 
         <include>
             <uri>model://puzzlebot</uri>
-            <pose>0.0 0 0.0 0 0 0</pose>
+            <pose>-2.19 1.40 0.0 0 0 0</pose>
         </include>
         <include>
             <uri>model://track</uri>
-            <pose>-0.79 4.59 3.17 -2.48 -0.12 0.76</pose>
+            <pose>-0.68 1.55 1.14 -2.48 -0.12 0.76</pose>
         </include>
     </world>
 </sdf>

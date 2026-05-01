@@ -24,18 +24,19 @@ class MonteCarloSLAM(Node):
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
         self.last_odom = None
+        
 
-        self.num_particles = 50 # probar con pocas y analizar el rendimiento
+        self.num_particles = 20 # probar con pocas y analizar el rendimiento
         self.particles = np.zeros((self.num_particles, 4))
         self.particles[:, 3] = 1.0 / self.num_particles # Pesos iniciales
         
-        self.map_res = 0.01  # 1cm por pixel
+        self.map_res = 0.05
         self.map_width = 200 # metros
         self.map_height = 200
         self.map_origin_x = -(self.map_width * self.map_res) / 2
         self.map_origin_y = -(self.map_height * self.map_res) / 2
         self.grid = np.full((self.map_width, self.map_height), -1, dtype=np.int8) # -1 es desconocido
-        self.grid_probs = np.zeros((self.map_width, self.map_height), dtype=np.float32) # Para mantener probabilidades de ocupación
+        #self.grid_probs = np.zeros((self.map_width, self.map_height), dtype=np.float32) # Para mantener probabilidades de ocupación
 
 
     def odom_callback(self, msg):
@@ -46,9 +47,14 @@ class MonteCarloSLAM(Node):
         self.last_odom = msg
         # Must change this to use the actual odometry data to move the particles
         # Particle motion simulated with some noise
-        dx = msg.twist.twist.linear.x * 0.1 
-        dy = msg.twist.twist.linear.y * 0.1
-        da = msg.twist.twist.angular.z * 0.1
+        dx = msg.twist.twist.linear.x * 0.05 
+        dy = msg.twist.twist.linear.y * 0.05
+        da = msg.twist.twist.angular.z * 0.05
+
+        # Update particles with motion + noise
+        if (abs(dx) > 1e-4 or abs(dy) > 1e-4 or abs(da) > 1e-4):
+            return
+
 
         for p in self.particles:
             p[0] += dx + random.gauss(0, 0.01) # Gaussian noise
@@ -69,35 +75,11 @@ class MonteCarloSLAM(Node):
         best_particle = self.particles[np.argmax(self.particles[:, 3])]
 
         # 2. Ray Casting for mapping: Update the map based on the best particle's pose and the LiDAR scan
-        self.update_map_with_scan2(best_particle, msg)
+        self.update_map_with_scan(best_particle, msg)
         
         # 3. Publish the transform from 'map' to 'odom' based on the best particle's pose
         self.publish_transform(best_particle, self.last_odom)
         self.publish_map()
-
-    def update_weights(self, scan):
-        for p in self.particles:
-            score = 0
-            # Tomamos solo algunos puntos del scan para no saturar el CPU
-            for i in range(0, len(scan.ranges), 10): 
-                dist = scan.ranges[i]
-                if dist > scan.range_max or dist < scan.range_min: continue
-                
-                angle = p[2] + scan.angle_min + (i * scan.angle_increment)
-                tx = int((p[0] + dist * np.cos(angle) - self.map_origin_x) / self.map_res)
-                ty = int((p[1] + dist * np.sin(angle) - self.map_origin_y) / self.map_res)
-                
-                if 0 <= tx < self.map_width and 0 <= ty < self.map_height:
-                    # Si la partícula "ve" una pared donde el mapa ya dice que hay una pared, ¡premio!
-                    if self.grid[tx, ty] == 100:
-                        score += 1
-            
-            p[3] = score # Actualizamos el peso
-        
-        # Normalizar pesos
-        sum_w = np.sum(self.particles[:, 3])
-        if sum_w > 0:
-            self.particles[:, 3] /= sum_w
 
     def update_map_with_scan(self, pose, scan):
         #Convert LiDAR readings from polar to Cartesian coordinates relative to the map
@@ -142,56 +124,33 @@ class MonteCarloSLAM(Node):
     #     start_y = int((oy - self.map_origin_y) / self.map_res)
 
     #     for i, dist in enumerate(scan.ranges):
-    #         if dist > scan.range_max or dist < scan.range_min:
+    #         if dist > scan.range_max or dist < scan.range_min or np.isnan(dist):
     #             continue
                 
     #         angle = otheta + scan.angle_min + (i * scan.angle_increment)
     #         end_x = int((ox + dist * np.cos(angle) - self.map_origin_x) / self.map_res)
     #         end_y = int((oy + dist * np.sin(angle) - self.map_origin_y) / self.map_res)
 
-    #         # Obtain all ray cells
+    #         # 1. Obtener todas las celdas por las que pasa el rayo
     #         ray_cells = self.get_line_cells(start_x, start_y, end_x, end_y)
             
-    #         for cell_x, cell_y in ray_cells[:-1]: # Todas menos la última son LIBRES
+    #         # 2. "Limpiar" el camino (reducir probabilidad de ocupación)
+    #         for cell_x, cell_y in ray_cells[:-1]:
     #             if 0 <= cell_x < self.map_width and 0 <= cell_y < self.map_height:
-    #                 self.grid[cell_x, cell_y] = 0
+    #                 # Restamos 2 (puedes tunear este valor)
+    #                 if self.grid_probs[cell_x, cell_y] > -100:
+    #                     self.grid_probs[cell_x, cell_y] -= 2
             
-    #         # Last cell is occupied
+    #         # 3. Marcar el impacto (aumentar probabilidad)
     #         if 0 <= end_x < self.map_width and 0 <= end_y < self.map_height:
-    #             self.grid[end_x, end_y] = 100
-    def update_map_with_scan2(self, pose, scan):
-        ox, oy, otheta = pose[:3]
-        start_x = int((ox - self.map_origin_x) / self.map_res)
-        start_y = int((oy - self.map_origin_y) / self.map_res)
+    #             if self.grid_probs[end_x, end_y] < 100:
+    #                 self.grid_probs[end_x, end_y] += 5 # Más peso al impacto
 
-        for i, dist in enumerate(scan.ranges):
-            if dist > scan.range_max or dist < scan.range_min or np.isnan(dist):
-                continue
-                
-            angle = otheta + scan.angle_min + (i * scan.angle_increment)
-            end_x = int((ox + dist * np.cos(angle) - self.map_origin_x) / self.map_res)
-            end_y = int((oy + dist * np.sin(angle) - self.map_origin_y) / self.map_res)
-
-            # 1. Obtener todas las celdas por las que pasa el rayo
-            ray_cells = self.get_line_cells(start_x, start_y, end_x, end_y)
-            
-            # 2. "Limpiar" el camino (reducir probabilidad de ocupación)
-            for cell_x, cell_y in ray_cells[:-1]:
-                if 0 <= cell_x < self.map_width and 0 <= cell_y < self.map_height:
-                    # Restamos 2 (puedes tunear este valor)
-                    if self.grid_probs[cell_x, cell_y] > -100:
-                        self.grid_probs[cell_x, cell_y] -= 2
-            
-            # 3. Marcar el impacto (aumentar probabilidad)
-            if 0 <= end_x < self.map_width and 0 <= end_y < self.map_height:
-                if self.grid_probs[end_x, end_y] < 100:
-                    self.grid_probs[end_x, end_y] += 5 # Más peso al impacto
-
-        # 4. Convertir las probabilidades al formato de OccupancyGrid (-1, 0, 100)
-        # Solo marcamos como ocupado si la probabilidad acumulada es alta (> 10 por ejemplo)
-        self.grid = np.full((self.map_width, self.map_height), -1, dtype=np.int8)
-        self.grid[self.grid_probs < -5] = 0
-        self.grid[self.grid_probs > 10] = 100    
+    #     # 4. Convertir las probabilidades al formato de OccupancyGrid (-1, 0, 100)
+    #     # Solo marcamos como ocupado si la probabilidad acumulada es alta (> 10 por ejemplo)
+    #     self.grid = np.full((self.map_width, self.map_height), -1, dtype=np.int8)
+    #     self.grid[self.grid_probs < -5] = 0
+    #     self.grid[self.grid_probs > 10] = 100    
 
 
     def get_line_cells(self, x0, y0, x1, y1):
@@ -223,7 +182,7 @@ class MonteCarloSLAM(Node):
         image_data[image_data == 100] = 0   # Occupied -> Black
         image_data[image_data == 0] = 255   # Free -> White
         
-        cv2.imwrite('mapa_test2.png', image_data)
+        cv2.imwrite('mapa_generado2.png', image_data)
         self.get_logger().info("Mapa generado")
 
     def publish_map(self):

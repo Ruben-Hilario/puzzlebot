@@ -10,11 +10,14 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2/LinearMath/Quaternion.h>
+#include <std_srvs/srv/empty.hpp>
 #include <cstdlib>
 #include <cmath>
 #include <vector>
 #include <random>
 #include <algorithm>
+#include <fstream>
+#include <iostream>
 
 struct Particle {
     double x, y, theta;
@@ -42,9 +45,11 @@ private:
     void publish_transform(const Particle& best_p, const nav_msgs::msg::Odometry::SharedPtr odom_msg);
     void publishParticlesAndPose();
     void publish_map();
-
+    void saveMap();
+    void saveMapSrv(const std::shared_ptr<std_srvs::srv::Empty::Request>,
+                    std::shared_ptr<std_srvs::srv::Empty::Response>);
     
-    int num_particles_;
+    int num_particles_ = 100;
     double map_res_ = 0.01;
     int map_width_ = 2000;  // 200m at 0.01 res = 2000 cells
     int map_height_ = 2000;
@@ -52,14 +57,16 @@ private:
     double map_origin_y_;
     std::vector<Particle> particles_;
     std::vector<int8_t> grid_;
-    std::mt19937 gen_; //std::mt19random_engine gen
+    std::mt19937 gen_{std::random_device{}()};
+    const double freq = 200.0;
+    const float dt = 1.0 / freq;
         
     // Map
     nav_msgs::msg::OccupancyGrid map_;
-    bool map_received_;
+    bool map_received_ = false;
     
     // Odometry tracking
-    nav_msgs::msg::Odometry::SharedPtr last_odom_;
+    nav_msgs::msg::Odometry::SharedPtr last_odom_ = nullptr;
 
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -70,7 +77,10 @@ private:
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-};  
+
+    const std::string map_name = "montecarlo_map";
+    rclcpp::Service<std_srvs::srv::Empty>::SharedPtr save_map_srv_;
+};
 
 }
 

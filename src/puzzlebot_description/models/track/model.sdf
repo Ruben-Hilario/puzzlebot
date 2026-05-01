@@ -7,6 +7,7 @@
         <geometry>
           <mesh>
             <uri>./meshes/track.stl</uri>
+            <scale>0.4 0.4 0.4</scale>
           </mesh>
         </geometry>
       </visual>
@@ -15,6 +16,7 @@
         <geometry>
           <mesh>
             <uri>./meshes/track.stl</uri>
+            <scale>0.4 0.4 0.4</scale>
           </mesh>
         </geometry>
       </collision>

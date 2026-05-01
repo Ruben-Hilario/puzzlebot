@@ -23,8 +23,8 @@ def generate_launch_description():
         name='pid_node',
         output='screen'
     )
-     # MCL Python Node
     
+    # MCL Python Node
     mcl_pynode = Node(
         package='puzzlebot_localisation',
         executable='MCL.py',
@@ -34,7 +34,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         odom_node,
-        #mcl_node,
-        mcl_pynode,
+        mcl_node,
+        #mcl_pynode,
         #pid_node,
     ])
