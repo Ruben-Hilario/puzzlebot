@@ -1,0 +1,20 @@
+[
+ {
+  "InstFile" : "/media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/src/top.v",
+  "InstLine" : 11,
+  "InstName" : "top",
+  "ModuleFile" : "/media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/src/top.v",
+  "ModuleLine" : 11,
+  "ModuleName" : "top",
+  "SubInsts" : [
+   {
+    "InstFile" : "/media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/src/top.v",
+    "InstLine" : 20,
+    "InstName" : "u_motor_pwm",
+    "ModuleFile" : "/media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/src/motor_pwm.v",
+    "ModuleLine" : 1,
+    "ModuleName" : "motor_pwm"
+   }
+  ]
+ }
+]

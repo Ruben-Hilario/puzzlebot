@@ -1,0 +1,29 @@
+// ----- Clock -----
+// On-board 27 MHz oscillator
+IO_LOC  "clk_27mhz" 4;
+IO_PORT "clk_27mhz" PULL_MODE=UP IO_TYPE=LVCMOS33;
+
+// ----- Reset -----
+// On-board user button S1
+IO_LOC  "rst_n" 88;
+IO_PORT "rst_n" PULL_MODE=UP IO_TYPE=LVCMOS33;
+
+// ----- DIP switch inputs -----
+// PB0 and PB1 are wired to two of the DIP switch positions.
+IO_LOC  "pb0" 77;
+IO_PORT "pb0" PULL_MODE=DOWN IO_TYPE=LVCMOS33;
+
+IO_LOC  "pb1" 76;
+IO_PORT "pb1" PULL_MODE=DOWN IO_TYPE=LVCMOS33;
+
+// ----- L298N H-bridge control outputs -----
+// IN1 / IN2 set the rotation direction of the motor.
+// ENA carries the PWM signal that controls the motor speed.
+IO_LOC  "l298_in1" 73;
+IO_PORT "l298_in1" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC  "l298_in2" 74;
+IO_PORT "l298_in2" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC  "l298_ena" 75;
+IO_PORT "l298_ena" IO_TYPE=LVCMOS33 DRIVE=8;

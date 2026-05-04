@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module name="top" T_Register="17(0)" T_Alu="15(0)" T_Lut="16(0)">
+ <SubModule name="u_motor_pwm" Register="17" Alu="15" Lut="16" T_Register="17(17)" T_Alu="15(15)" T_Lut="16(16)"/>
+</Module>

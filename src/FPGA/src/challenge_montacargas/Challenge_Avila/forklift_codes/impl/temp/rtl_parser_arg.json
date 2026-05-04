@@ -1,0 +1,21 @@
+{
+ "Device" : "GW2AR-18C",
+ "Files" : [
+  {
+   "Path" : "/media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/src/top.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "/media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/src/motor_pwm.v",
+   "Type" : "verilog"
+  }
+ ],
+ "IncludePath" : [
+
+ ],
+ "LoopLimit" : 2000,
+ "ResultFile" : "/media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/impl/temp/rtl_parser.result",
+ "Top" : "top",
+ "VerilogStd" : "verilog_2001",
+ "VhdlStd" : "vhdl_93"
+}

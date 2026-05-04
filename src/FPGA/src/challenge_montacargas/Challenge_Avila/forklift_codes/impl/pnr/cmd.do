@@ -1,0 +1,17 @@
+-d /media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/impl/gwsynthesis/forklift_codes.vg
+-p GW2AR-18C-QFN88-8
+-pn GW2AR-LV18QN88C8/I7
+-cst /media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/src/forklift_codes.cst
+-cfg /media/jesus/Nuevo vol1/Gowin_FPGA/forklift_codes/impl/pnr/device.cfg
+-bit
+-tr
+-ph
+-timing
+-cst_error
+-convert_sdp32_36_to_sdp16_18
+-place_option 0
+-route_option 0
+-clock_route_order 0
+-correct_hold 1
+-route_maxfan 23
+-global_freq 100.000
