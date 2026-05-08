@@ -3,6 +3,8 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
+#include "nav_msgs/msg/path.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include <vector>
 #include <queue>
 #include <cmath>
@@ -20,6 +22,21 @@ struct NodeState{
     double rhs = std::numeric_limits<double>::infinity();
 };
 
+struct NodeAStar {
+    int x, y;
+    double g, h, f;
+    NodeAStar* parent;
+
+    NodeAStar(int x, int y, NodeAStar* parent = nullptr)
+        : x(x), y(y), g(0), h(0), f(0), parent(parent) {}
+
+    bool operator==(const NodeAStar& other) const {
+        return x == other.x && y == other.y;
+    }
+};
+
+
+
 struct Key {
     double k1;
     double k2;
@@ -31,48 +48,46 @@ struct Key {
     }
 };
 
-class PathPlanner {
+class PathPlanner :  public rclcpp::Node {
 public:
-    PathPlanner();
+    PathPlanner(std::pair<int,int> start, std::pair<int,int> goal);
     ~PathPlanner() = default;
-    void setMap(const nav_msgs::msg::OccupancyGrid::ConstPtr& map);
-    void initDStar(std::pair<int, int> start, std::pair<int, int> goal);
-    std::vector<std::pair<int, int>> updateDStar(std::pair<int, int> current_pos, const std::vector<std::pair<int, int>>& changed_cells);
-    void updateMapData(const nav_msgs::msg::OccupancyGrid::SharedPtr& map);
-
+    
 private:
     //  A*
-    std::vector<std::pair<int, int>> astar(std::pair<int, int> start, std::pair<int, int> goal);
+    std::vector<std::pair<int,int>> aStar(
+		// const std::vector<int8_t>& map_data
+        // std::pair<int,int> map_size,
+        // std::pair<int,int> start, std::pair<int,int> goal
+	);
 
-    double get_distance(int x1, int y1, int x2, int y2);
-    bool is_valid(int x, int y);
-    bool is_occupied(int x, int y);
-    
-    std::vector<NodeState> node_map_;
-    std::priority_queue<std::pair<Key, int>, 
-    std::vector<std::pair<Key, int>>, 
-    std::greater<std::pair<Key, int>>> open_list_;
-    
-    std::pair<int, int> start_;
-    std::pair<int, int> goal_;
-    double k_m_;
+    void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+    void publish_path();
 
-    inline int to_index(int x, int y) const { return y * width_ + x; }
-    inline std::pair<int, int> from_index(int idx) const { return {idx % width_, idx / width_}; }
-
-    Key calculate_key(int s_idx);
-    void update_vertex(int u_idx);
-    void compute_shortest_path();
-    double heuristic(std::pair<int, int> a, std::pair<int, int> b);
-    double get_cost(int a_idx, int b_idx);
-    
     nav_msgs::msg::OccupancyGrid::ConstPtr current_map_;
-    int width_, height_;
+    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+    std::vector<std::pair<int,int>> path;
+    
+    std::pair<int,int> map_size;
+    std::pair<int,int> start, goal;
+    bool planning_ = false;
+    rclcpp::TimerBase::SharedPtr timer_;
+
+
 };
 
-nav_msgs::msg::OccupancyGrid create_simple_map(double resolution, int width, int height);
+class Utils : public rclcpp::Node{
+public:
+    Utils();
+    Utils(const std::string& yaml_path);
+    ~Utils() = default;
+    nav_msgs::msg::OccupancyGrid create_simple_map(double resolution, int width, int height);
+    nav_msgs::msg::OccupancyGrid load_map_from_file(/*const std::string& yaml_path*/);
+    std::string yaml_path;
+    rclcpp::TimerBase::SharedPtr timer_;
+};
 
-nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path);
 
 } // namespace puzzlebot_localisation
 

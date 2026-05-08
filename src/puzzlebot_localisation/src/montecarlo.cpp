@@ -55,7 +55,7 @@ void MonteCarlo::odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
     double dy = msg->twist.twist.linear.y * dt;
     double da = msg->twist.twist.angular.z * dt;
 
-    // Only update particles if the robot is actually moving
+    // this was added to reduce shaking
     if (std::abs(dx) < 1e-4 && std::abs(dy) < 1e-4 && std::abs(da) < 1e-4) {
         return; 
     }

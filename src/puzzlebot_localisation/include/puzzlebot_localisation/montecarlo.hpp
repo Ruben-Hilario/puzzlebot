@@ -41,6 +41,8 @@ private:
     void motionModel(double delta_x, double delta_y, double delta_theta);
     void sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg);
     std::vector<std::pair<int, int>> get_line_cells(int x0, int y0, int x1, int y1);
+
+    
         
     void publish_transform(const Particle& best_p, const nav_msgs::msg::Odometry::SharedPtr odom_msg);
     void publishParticlesAndPose();

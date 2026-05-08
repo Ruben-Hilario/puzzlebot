@@ -1,7 +1,6 @@
 #Launch file for doing inferenc, could be adjusted to test out with local media
 from launch import LaunchDescription
 from launch_ros.actions import Node
-import 
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description(context, *args, **kwargs):

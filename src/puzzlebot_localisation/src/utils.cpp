@@ -1,277 +1,147 @@
 #include "puzzlebot_localisation/utils.hpp"
 
 namespace puzzlebot_localisation {
-PathPlanner::PathPlanner() : width_(0), height_(0) {}
+PathPlanner::PathPlanner(std::pair<int,int> start, std::pair<int,int> goal) : Node("path_planner_node"), start(start), goal(goal) {
+    // Constructor can be used to initialize any necessary variables or subscriptions
+    
+    map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+        "map", 10, std::bind(&PathPlanner::mapCb, this, std::placeholders::_1));
+    
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
+    
+    timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
+        if (planning_) {
+            publish_path();
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Path not found.");
+        }
+        });
+}
+
+void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+    if (planning_) return;
+
+    RCLCPP_INFO(this->get_logger(), "Map: %dx%d", msg->info.width, msg->info.height);
+    current_map_ = msg;
+    map_size = std::make_pair(msg->info.width, msg->info.height);
+    
+    path = aStar();
+}
 
 // --- IMPLEMENTACIÓN A* (Optimized for flat vector) ---
-std::vector<std::pair<int, int>> PathPlanner::astar(std::pair<int, int> start, std::pair<int, int> goal) {
-    if (!current_map_) return {};
-    
-    int start_idx = to_index(start.first, start.second);
-    int goal_idx = to_index(goal.first, goal.second);
+std::vector<std::pair<int, int>> PathPlanner::aStar(
+        //const std::vector<int8_t>& map_data,
+        //const std::pair<int,int>& map_size,
+        // std::pair<int,int> start, std::pair<int,int> goal
+    ) {
+    if (planning_) return {}; // Prevent concurrent planning
+    std::vector<NodeAStar*> open_list;
+    std::vector<NodeAStar*> closed_list;
 
-    std::priority_queue<std::pair<double, int>, 
-    std::vector<std::pair<double, int>>, 
-    std::greater<std::pair<double, int>>> open_set;
-    
-    std::vector<int> came_from(width_ * height_, -1);
-    std::vector<double> g_score(width_ * height_, std::numeric_limits<double>::infinity());
+    NodeAStar* start_node = new NodeAStar(start.first, start.second);
+    NodeAStar* goal_node = new NodeAStar(goal.first, goal.second);
+    open_list.push_back(start_node);
 
-    open_set.push({0.0, start_idx});
-    g_score[start_idx] = 0.0;
-    
-    while (!open_set.empty()) {
-        int current_idx = open_set.top().second;
-        double current_f = open_set.top().first;
-        open_set.pop();
+    int iterations = 0;
+    const int max_iter = 150000;
+    const std::vector<std::pair<int, int>> neighbors = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
 
-        if (current_idx == goal_idx) {
+    while (!open_list.empty() && iterations < max_iter) {
+        iterations++;
+
+        auto current_it = std::min_element(open_list.begin(), open_list.end(), 
+            [](NodeAStar* a, NodeAStar* b) { return a->f < b->f; });
+        
+        NodeAStar* current_node = *current_it;
+        open_list.erase(current_it);
+        closed_list.push_back(current_node);
+
+        if (*current_node == *goal_node) {
             std::vector<std::pair<int, int>> path;
-            while (current_idx != start_idx) {
-                path.push_back(from_index(current_idx));
-                current_idx = came_from[current_idx];
+            while (current_node != nullptr) {
+                path.push_back({current_node->x, current_node->y});
+                current_node = current_node->parent;
             }
-            std::reverse(path.begin(), path.end());
-            return path;
+            planning_ = true;
+            return path; 
         }
 
-        if (current_f > g_score[current_idx] + heuristic(from_index(current_idx), goal)) continue;
+        for (auto& n : neighbors) {
+            int nx = current_node->x + n.first;
+            int ny = current_node->y + n.second;
 
-        std::pair<int, int> current = from_index(current_idx);
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                if (dx == 0 && dy == 0) continue;
-                int nx = current.first + dx;
-                int ny = current.second + dy;
-                
-                if (is_valid(nx, ny) && !is_occupied(nx, ny)) {
-                    int neighbor_idx = to_index(nx, ny);
-                    double tentative_g = g_score[current_idx] + std::hypot(dx, dy);
-                    
-                    if (tentative_g < g_score[neighbor_idx]) {
-                        came_from[neighbor_idx] = current_idx;
-                        g_score[neighbor_idx] = tentative_g;
-                        double f = tentative_g + heuristic({nx, ny}, goal);
-                        open_set.push({f, neighbor_idx});
-                    }
-                }
+            // 1. Boundary Check
+            if (nx < 0 || nx >= (int)current_map_->info.width || ny < 0 || ny >= (int)current_map_->info.height) continue;
+
+            // 2. Occupancy Check (Row-Major)
+            int index = (ny * current_map_->info.width) + nx;
+            int8_t cell_value = current_map_->data[index];
+
+            // Skip if Occupied (100) or Unknown (-1)
+            if (cell_value >= 50 || cell_value == -1) continue;
+
+            NodeAStar* child = new NodeAStar(nx, ny, current_node);
+
+            bool in_closed = false;
+            for (auto cl : closed_list) if (*cl == *child) { in_closed = true; break; }
+            if (in_closed) { delete child; continue; }
+
+            child->g = current_node->g + 1;
+            child->h = std::pow(child->x - goal_node->x, 2) + std::pow(child->y - goal_node->y, 2);
+            child->f = child->g + child->h;
+
+            bool skip = false;
+            for (auto ol : open_list) {
+                if (*ol == *child && child->g > ol->g) { skip = true; break; }
             }
+
+            if (!skip) open_list.push_back(child);
+            else delete child;
         }
     }
+
     return {};
 }
-
-void PathPlanner::setMap(const nav_msgs::msg::OccupancyGrid::ConstPtr& map) {
-    current_map_ = map;
-    width_ = map->info.width;
-    height_ = map->info.height;
-    if (node_map_.size() != (size_t)(width_ * height_)) {
-        node_map_.assign(width_ * height_, NodeState());
-    }
-}
-
-double PathPlanner::get_distance(int x1, int y1, int x2, int y2) {
-    return std::hypot(x1 - x2, y1 - y2);
-}
-
-bool PathPlanner::is_valid(int x, int y) {
-    return (x >= 0 && x < width_ && y >= 0 && y < height_);
-}
-
-bool PathPlanner::is_occupied(int x, int y) {
-    int index = y * width_ + x;
-    return (current_map_->data[index] > 50 || current_map_->data[index] == -1);
-}
-
-double PathPlanner::heuristic(std::pair<int, int> a, std::pair<int, int> b) {
-    return std::hypot(a.first - b.first, a.second - b.second);
-}
-
-double PathPlanner::get_cost(int a_idx, int b_idx) {
-    std::pair<int, int> b = from_index(b_idx);
-    if (is_occupied(b.first, b.second)) return std::numeric_limits<double>::infinity();
-    std::pair<int, int> a = from_index(a_idx);
-    return std::hypot(a.first - b.first, a.second - b.second);
-}
-
-Key PathPlanner::calculate_key(int s_idx) {
-    double min_g_rhs = std::min(node_map_[s_idx].g, node_map_[s_idx].rhs);
-    return {min_g_rhs + heuristic(start_, from_index(s_idx)) + k_m_, min_g_rhs};
-}
-
-void PathPlanner::update_vertex(int u_idx) {
-    int goal_idx = to_index(goal_.first, goal_.second);
-    if (u_idx != goal_idx) {
-        double min_rhs = std::numeric_limits<double>::infinity();
-        std::pair<int, int> u = from_index(u_idx);
+void PathPlanner::publish_path(){
+    // Convert vector of pairs to nav_msgs::msg::Path
+    auto path_msg = nav_msgs::msg::Path();
+    path_msg.header.frame_id = "map";
+    path_msg.header.stamp = this->now();
+    for (const auto& point : path) {
+        geometry_msgs::msg::PoseStamped pose;
+        pose.header.frame_id = "map";
+        pose.header.stamp = this->now();
+        //Convert to world coordinates
+        pose.pose.position.x = (point.first * current_map_->info.resolution) + 
+                                current_map_->info.origin.position.x;
+        pose.pose.position.y = (point.second * current_map_->info.resolution) + 
+                                current_map_->info.origin.position.y;
         
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                if (dx == 0 && dy == 0) continue;
-                int nx = u.first + dx;
-                int ny = u.second + dy;
-                if (is_valid(nx, ny)) {
-                    int n_idx = to_index(nx, ny);
-                    double cost = std::hypot(dx, dy);
-                    if (is_occupied(nx, ny)) cost = std::numeric_limits<double>::infinity();
-                    
-                    if (node_map_[n_idx].g != std::numeric_limits<double>::infinity()) {
-                        min_rhs = std::min(min_rhs, cost + node_map_[n_idx].g);
-                    }
-                }
-            }
-        }
-        node_map_[u_idx].rhs = min_rhs;
+        pose.pose.position.z = 0.0;
+        pose.pose.orientation.w = 1.0;
+        path_msg.poses.push_back(pose);
     }
     
-    // Solo insertamos si hay inconsistencia
-    if (node_map_[u_idx].g != node_map_[u_idx].rhs) {
-        open_list_.push({calculate_key(u_idx), u_idx});
-    }
+    path_pub_->publish(path_msg);
+    RCLCPP_INFO(this->get_logger(), "Path found");
 }
 
-void PathPlanner::compute_shortest_path() {
-    int start_idx = to_index(start_.first, start_.second);
-    
-    while (!open_list_.empty()) {
-        auto top = open_list_.top();
-        Key k_old = top.first;
-        int u_idx = top.second;
-        
-        // --- PROTECCIÓN DE RAM Y RENDIMIENTO ---
-        // Si la clave en la cola es mayor a la clave actual calculada, 
-        // significa que este es un nodo duplicado/obsoleto. Lo descartamos.
-        if (k_old < calculate_key(u_idx) && node_map_[u_idx].g == node_map_[u_idx].rhs) {
-            open_list_.pop();
-            continue;
+Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map", 10);
+    timer_ = this->create_wall_timer(std::chrono::seconds(1), [this, map_pub_]() {
+        try {
+            //auto map = load_map_from_file();
+            auto map = create_simple_map(5,10,10);
+            map_pub_->publish(map);
+            RCLCPP_INFO(this->get_logger(), "Map published successfully.");
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to load map: %s", e.what());
         }
-
-        // Condición de parada de D* Lite
-        if (!(calculate_key(start_idx) > k_old) && node_map_[start_idx].rhs == node_map_[start_idx].g) {
-            break;
-        }
-
-        open_list_.pop();
-        Key k_new = calculate_key(u_idx);
-
-        if (k_old < k_new) {
-            open_list_.push({k_new, u_idx});
-        } else if (node_map_[u_idx].g > node_map_[u_idx].rhs) {
-            node_map_[u_idx].g = node_map_[u_idx].rhs;
-            std::pair<int, int> u = from_index(u_idx);
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    if (dx == 0 && dy == 0) continue;
-                    int nx = u.first + dx;
-                    int ny = u.second + dy;
-                    if (is_valid(nx, ny)) update_vertex(to_index(nx, ny));
-                }
-            }
-        } else {
-            double g_old = node_map_[u_idx].g;
-            node_map_[u_idx].g = std::numeric_limits<double>::infinity();
-            
-            // Actualizar el nodo actual y sus vecinos
-            update_vertex(u_idx);
-            std::pair<int, int> u = from_index(u_idx);
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    if (dx == 0 && dy == 0) continue;
-                    int nx = u.first + dx;
-                    int ny = u.second + dy;
-                    if (is_valid(nx, ny)) update_vertex(to_index(nx, ny));
-                }
-            }
-        }
-    }
+    });
 }
 
-void PathPlanner::initDStar(std::pair<int, int> start, std::pair<int, int> goal) {
-    start_ = start;
-    goal_ = goal;
-    k_m_ = 0.0;
-    
-    node_map_.assign(width_ * height_, NodeState());
-    while(!open_list_.empty()) open_list_.pop();
-    
-    int goal_idx = to_index(goal_.first, goal_.second);
-    node_map_[goal_idx].rhs = 0.0;
-    open_list_.push({calculate_key(goal_idx), goal_idx});
-    
-    compute_shortest_path();
-}
 
-std::vector<std::pair<int, int>> PathPlanner::updateDStar(std::pair<int, int> current_pos, const std::vector<std::pair<int, int>>& changed_cells) {
-    //RCLCPP_INFO(this->get_logger(), "IF");
-    if (start_ != current_pos) {
-        k_m_ += heuristic(start_, current_pos);
-        start_ = current_pos;
-    }
-    //RCLCPP_INFO(this->get_logger(), "FOR");
-    for (auto u : changed_cells) {
-        int u_idx = to_index(u.first, u.second);
-        update_vertex(u_idx);
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                if (dx == 0 && dy == 0) continue;
-                int nx = u.first + dx;
-                int ny = u.second + dy;
-                if (is_valid(nx, ny)) {
-                    update_vertex(to_index(nx, ny));
-                }
-            }
-        }
-    }
-    
-    compute_shortest_path();
-    
-    std::vector<std::pair<int, int>> path;
-    auto curr = start_;
-    path.push_back(curr);
-    
-    int goal_idx = to_index(goal_.first, goal_.second);
-    while (curr != goal_) {
-        int curr_idx = to_index(curr.first, curr.second);
-        if (node_map_[curr_idx].g == std::numeric_limits<double>::infinity()) {
-            return {}; // No path found
-        }
-        
-        double min_cost = std::numeric_limits<double>::infinity();
-        std::pair<int, int> next_node = curr;
-        
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                if (dx == 0 && dy == 0) continue;
-                int nx = curr.first + dx;
-                int ny = curr.second + dy;
-                if (is_valid(nx, ny)) {
-                    int n_idx = to_index(nx, ny);
-                    double cost = std::hypot(dx, dy);
-                    if (is_occupied(nx, ny)) cost = std::numeric_limits<double>::infinity();
-                    double c = cost + node_map_[n_idx].g;
-                    if (c < min_cost) {
-                        min_cost = c;
-                        next_node = {nx, ny};
-                    }
-                }
-            }
-        }
-        
-        if (next_node == curr) return {}; // Stuck
-        curr = next_node;
-        path.push_back(curr);
-        if (path.size() > (size_t)(width_ * height_)) return {}; // Safety break
-    }
-    
-    return path;
-}
-
-void PathPlanner::updateMapData(const nav_msgs::msg::OccupancyGrid::SharedPtr& map) {
-    // Solo actualizamos el puntero, no reasignamos el vector node_map_
-    current_map_ = map;
-}
-
-nav_msgs::msg::OccupancyGrid create_simple_map(double resolution, int width, int height) {
+nav_msgs::msg::OccupancyGrid Utils::create_simple_map(double resolution, int width, int height) {
     nav_msgs::msg::OccupancyGrid map;
     map.header.frame_id = "map";
     map.info.resolution = resolution;
@@ -295,7 +165,8 @@ nav_msgs::msg::OccupancyGrid create_simple_map(double resolution, int width, int
     return map;
 }
 
-nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path) {
+
+nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(/*const std::string& yaml_path*/) {
     nav_msgs::msg::OccupancyGrid map;
     map.header.frame_id = "map";
     
@@ -386,7 +257,8 @@ nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path) {
     
     map.data.resize(width * height);
     for (size_t i = 0; i < pgm_data.size(); ++i) {
-        double prob = static_cast<double>(pgm_data[i]) / max_val;
+        double prob = static_cast<double>(pgm_data[i]) / max_val; // use this for the one done with gazebo
+        // double prob = 1.0 - (static_cast<double>(pgm_data[i]) / max_val); 
         if (negate) prob = 1.0 - prob;
         
         if (prob > occupied_thresh) {

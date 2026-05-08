@@ -8,3 +8,6 @@ impl/
 *.log
 *.bin
 *.mp4
+
+src/puzzlebot_vision/models/*
+src/puzzlebot_vision/media/csv/*

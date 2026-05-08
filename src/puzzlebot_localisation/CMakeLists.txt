@@ -49,8 +49,8 @@ target_compile_features(odom_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(kalman_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(mcl_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(route_node PUBLIC c_std_99 cxx_std_17)
-target_compile_features(route_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(map_publisher PUBLIC c_std_99 cxx_std_17)
+
 target_include_directories(odom_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
