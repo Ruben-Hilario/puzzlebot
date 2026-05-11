@@ -48,7 +48,7 @@ install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
 
-file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/nodes/*py")
+file(GLOB python_scripts "${CMAKE_CURRENT_SOURCE_DIR}/scripts/nodes/*.py")
 install(PROGRAMS ${python_scripts}
   DESTINATION lib/${PROJECT_NAME}
 )

@@ -1,6 +1,6 @@
 import numpy as np
 
-class HMM:
+class HMMUtils:
     def __init__(self, n_states, n_symbols):
         self.N = n_states  # Number of states
         self.M = n_symbols # Size of codebook (observation symbols)
@@ -21,25 +21,48 @@ class HMM:
         self.pi = np.zeros(n_states)
         self.pi[0] = 1.0
 
+    # def forward(self, obs_seq):
+    #     """Problem 1: Calculate P(O|lambda) using Forward Algorithm"""
+    #     T = len(obs_seq)
+    #     if T == 0: return -np.inf
+    #     #log for preventing underflow
+    #     alpha = np.zeros((T, self.N))
+        
+    #     # Initialization
+    #     alpha[0, :] = self.pi * self.B[:, obs_seq[0]]
+        
+    #     # Induction
+    #     for t in range(T - 1):
+    #         for j in range(self.N):
+    #             alpha[t+1, j] = (alpha[t, :] @ self.A[:, j]) * self.B[j, obs_seq[t+1]]
+                    
+    #     # Termination
+    #     # return np.sum(alpha[T-1, :])
+    #     # if it fails:
+    #     return np.log(np.sum(alpha[T-1, :1])+1e-100)
+        
     def forward(self, obs_seq):
-        """Problem 1: Calculate P(O|lambda) using Forward Algorithm"""
+        """Problem 1: Calculate Log P(O|lambda) with scaling to prevent underflow"""
         T = len(obs_seq)
         if T == 0: return -np.inf
-        #log for preventing underflow
+        
         alpha = np.zeros((T, self.N))
+        scale = np.zeros(T)
         
-        # Initialization
+        # Initialization with scaling
         alpha[0, :] = self.pi * self.B[:, obs_seq[0]]
+        scale[0] = np.sum(alpha[0, :]) + 1e-300
+        alpha[0, :] /= scale[0]
         
-        # Induction
+        # Induction with scaling
         for t in range(T - 1):
             for j in range(self.N):
                 alpha[t+1, j] = (alpha[t, :] @ self.A[:, j]) * self.B[j, obs_seq[t+1]]
+            scale[t+1] = np.sum(alpha[t+1, :]) + 1e-300
+            alpha[t+1, :] /= scale[t+1]
         
-        # Termination
-        return np.sum(alpha[T-1, :])
-        # if it fails:
-        #return np.log(np.sum(alpha[T-1, :1])+12-100)
+        # The log-probability is the sum of the logs of the scaling factors
+        return np.sum(np.log(scale))
 
     def train(self, sequences, max_iter=20):
         """Problem 3: Adjust parameters via Baum-Welch (simplified for tutorial)"""
@@ -60,6 +83,8 @@ class HMM:
     def viterbi(self, obs_seq):
         """Problem 2: Find the most likely state sequence"""
         T = len(obs_seq)
+        if T == 0:
+            return np.array([], dtype=int)
         delta = np.zeros((T, self.N))
         phi = np.zeros((T, self.N), dtype=int)
         
@@ -67,10 +92,15 @@ class HMM:
         
         for t in range(1, T):
             for j in range(self.N):
-                delta[t, j] = np.max(delta[t-1, :] * self.A[:, j]) * self.B[j, obs_seq[t]]
-                phi[t, j] = np.argmax(delta[t-1, :] * self.A[:, j])
+                vals = delta[t-1, :] * self.A[:, j]
+                phi[t, j] = np.argmax(vals)
+                delta[t, j] = np.max(vals) * self.B[j, obs_seq[t]]
         
-        return np.max(delta[T-1, :])
+        states = np.zeros(T, dtype=int)
+        states[T-1] = np.argmax(delta[T-1, :])
+        for t in range(T-2, -1, -1):
+            states[t] = phi[t+1, states[t+1]]
+        return states
         
     def _viterbi(self, obs_seq):
             """Alternative for viterbi path solver"""
