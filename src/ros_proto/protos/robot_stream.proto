@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package robot;
+option go_package = "./pb";
+
+service VideoStreamer {
+  // Server-streaming RPC: Robot pushes frames to the Go server
+  rpc StreamVideo(stream Frame) returns (StreamStatus);
+}
+
+message Frame {
+  int64 timestamp = 1;
+  bytes image_data = 2; // Compressed JPEG or PNG bytes
+  string frame_id = 3;
+}
+
+message StreamStatus {
+  bool success = 1;
+  string message = 2;
+}

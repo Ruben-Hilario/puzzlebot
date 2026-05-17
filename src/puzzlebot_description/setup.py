@@ -20,6 +20,8 @@ setup(
         ('share/' + package_name + '/models/track', glob('models/track/*.*')),
         ('share/' + package_name + '/models/track/meshes', glob('models/track/meshes/*')),
         ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
+        ('share/' + package_name + '/models/map', glob('models/map/*.*')),
+        ('share/' + package_name + '/models/map/meshes', glob('models/map/meshes/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

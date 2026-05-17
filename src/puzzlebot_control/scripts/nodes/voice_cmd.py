@@ -4,6 +4,8 @@ import os
 import numpy as np
 import scipy.io.wavfile as wav
 from sklearn.metrics import confusion_matrix
+from sklearn.cluster import KMeans
+from scipy.spatial.distance import cdist
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -141,7 +143,163 @@ class VoiceCmdNode(Node):
 
 
 # --- HMM Node for training
-class HMMTrainingNode(Node):
+class HMMTrainingNode_MFCC(Node):
+    def __init__(self):
+        super().__init__('void_cmd_node')
+        self.media_path = os.path.join(get_package_share_directory('puzzlebot_control'), 'media', 'audio')
+        self.data, self.sr = self.load_dataset(self.media_path)
+        self.codebook_sizes = [16, 32, 64]
+        self.alpha = 0.95
+        self.global_centroids = None
+        self.hmms = {}
+        self.get_logger().info(f"Dataset loaded with {len(self.data)} words.")
+        self.timer = self.create_timer(1.0, self.timer_callback)
+           
+    def timer_callback(self):
+        utils = VoiceUtils()
+        vectorial = VectorialQuantization()
+        self.train(utils, vectorial)
+
+    def preprocess_to_mfcc(self, signal, fs, utils):
+        """Processes a raw signal into a matrix of MFCC vectors."""
+        signal = utils.normalize(signal)
+        signal = utils.detect_voice(signal, fs)
+        if len(signal) < 320:
+            return None
+        signal = utils.pre_emphasis(signal, self.alpha)
+        frames = utils.framing(signal, fs)
+        if len(frames) == 0:
+            return None
+        frames = utils.hamming_window(frames)
+        return utils.extract_mfcc(frames, fs)
+
+    def build_global_codebook(self, utils, size):
+        """Generates a single universal VQ codebook using MFCCs from all words."""
+        all_mfccs = []
+        for word in self.data.keys():
+            num_train_samples = min(10, len(self.data[word]))
+            for i in range(num_train_samples):
+                fs, signal = self.data[word][i]
+                mfccs = self.preprocess_to_mfcc(signal, fs, utils)
+                if mfccs is not None:
+                    all_mfccs.extend(mfccs)
+
+        if len(all_mfccs) == 0:
+            return None
+
+        # Using KMeans for global quantization of MFCC vectors
+        kmeans = KMeans(n_clusters=size, n_init=10, random_state=42)
+        kmeans.fit(np.array(all_mfccs))
+        return kmeans.cluster_centers_
+
+    def quantize(self, mfcc_features, centroids):
+        """Maps MFCC vectors to the closest global centroid index (Euclidean)."""
+        dist_matrix = cdist(mfcc_features, centroids, 'euclidean')
+        return np.argmin(dist_matrix, axis=1)
+
+    def train(self, utils, vectorial):
+        labels = list(self.data.keys())
+        for size in self.codebook_sizes:
+            self.get_logger().info(f"\nTraining with Global MFCC Codebook size: {size}")
+            
+            # Phase 1: Create the 'Universal Acoustic Alphabet'
+            self.global_centroids = self.build_global_codebook(utils, size)
+            if self.global_centroids is None:
+                continue
+
+            # Phase 2: Train individual HMMs
+            hmms = {}
+            for word in labels:
+                sequences = []
+                for fs, signal in self.data[word][:10]:
+                    mfccs = self.preprocess_to_mfcc(signal, fs, utils)
+                    if mfccs is not None:
+                        obs_seq = self.quantize(mfccs, self.global_centroids)
+                        sequences.append(obs_seq)
+
+                if sequences:
+                    word_hmm = hmm(n_states=5, n_symbols=size)
+                    word_hmm.train(sequences)
+                    hmms[word] = word_hmm
+                    # EXPLICIT PRINTING OF MATRICES
+                    self.get_logger().info(f"--- Model for word: {word} ---")
+                    self.get_logger().info(f"PI Matrix:\n{word_hmm.pi}")
+                    self.get_logger().info(f"A Matrix (Transitions):\n{word_hmm.A}")
+                    self.get_logger().info(f"B Matrix:\n{word_hmm.B}")
+
+            
+            self.hmms = hmms
+            self.evaluate_hmms(utils, size)
+
+    def evaluate_hmms(self, utils, size):
+        predictions, true_labels, confidences = [], [], []
+        per_word_stats = {}
+
+        for word in self.data.keys():
+            word_scores, word_confs = [], []
+            # Use samples 10-15 for testing
+            for fs, signal in self.data[word][10:15]:
+                mfccs = self.preprocess_to_mfcc(signal, fs, utils)
+                if mfccs is None: continue
+                
+                obs_seq = self.quantize(mfccs, self.global_centroids)
+                
+                # Problem 1: Evaluation (Forward Algorithm)
+                scores = {w: model.forward(obs_seq) for w, model in self.hmms.items()}
+                sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+                
+                best_word, best_score = sorted_scores[0]
+                second_score = sorted_scores[1][1] if len(sorted_scores) > 1 else -1e100
+                
+                predictions.append(best_word)
+                true_labels.append(word)
+                word_scores.append(best_score)
+                word_confs.append(best_score - second_score)
+
+            if word_scores:
+                per_word_stats[word] = {
+                    'avg_score': np.mean(word_scores),
+                    'avg_confidence': np.mean(word_confs),
+                    'samples': len(word_scores)
+                }
+
+        cm = confusion_matrix(true_labels, predictions, labels=list(self.data.keys()))
+        self.get_logger().info(f"Accuracy: {np.trace(cm)/np.sum(cm):.2f}")
+        self.get_logger().info(f"Confusion Matrix:\n{cm}")
+        
+        for word, stats in per_word_stats.items():
+            self.get_logger().info(f"Word '{word}': Score={stats['avg_score']:.2f}, Conf={stats['avg_confidence']:.2f}")
+
+    def load_dataset(self, path):
+        data, sr = {}, {}
+        for word in os.listdir(path):
+            word_path = os.path.join(path, word)
+
+            if not os.path.isdir(word_path):
+                continue
+
+            signals = []
+            fs = []
+            for file in sorted(os.listdir(word_path)):
+                file_path = os.path.join(word_path, file)
+
+                if not file.endswith(".wav"):
+                    continue
+
+                fs, signal = wav.read(file_path)
+                if signal.ndim > 1:
+                    signal = signal[:, 0]  
+                signal = signal.astype(float) / 32768.0 # convert to float32 
+                signals.append((fs, signal))
+
+            data[word] = signals
+            sr[word] = fs
+
+        return data, sr   
+    
+
+
+class HMMTrainingNode_LPC(Node):
     def __init__(self):
         super().__init__('void_cmd_node')
         self.media_path = os.path.join(get_package_share_directory('puzzlebot_control'), 'media', 'audio')
@@ -171,11 +329,12 @@ class HMMTrainingNode(Node):
         frames = utils.hamming_window(frames)
         autocorrs = np.array([utils.autocorrelation(frame, self.P) for frame in frames])
         return {'autocorrs': autocorrs}
-
+    
     def build_global_codebook(self, utils, vectorial, size):
         all_P = []
         all_Q = []
         all_autocorr = []
+        all_mfcc = []
         for word in self.data.keys():
             num_train_samples = min(10, len(self.data[word]))
             for i in range(num_train_samples):
@@ -203,7 +362,7 @@ class HMMTrainingNode(Node):
         centroids_lpc = np.array([
             utils.lsf_to_lpc(np.concatenate([cent_P[k], cent_Q[k]]))
             for k in range(len(cent_P))])
-        return cent_P, cent_Q, centroids_lpc
+        return cent_P, cent_Q, centroids_lpc #ecuclidian distance MFFCCs
 
     def quantize(self, autocorrs, centroids_lpc, vectorial):
         dist_matrix = vectorial.itakura_saito_batch(autocorrs, centroids_lpc)
@@ -388,7 +547,7 @@ class HMMTrainingNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     #voice_cmd_node = VoiceCmdNode()
-    voice_cmd_node = HMMTrainingNode()
+    voice_cmd_node = HMMTrainingNode_MFCC()
     rclpy.spin_once(voice_cmd_node) 
     voice_cmd_node.destroy_node()
     rclpy.shutdown()

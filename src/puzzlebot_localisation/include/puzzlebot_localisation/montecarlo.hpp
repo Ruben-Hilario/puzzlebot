@@ -46,12 +46,13 @@ private:
         
     void publish_transform(const Particle& best_p, const nav_msgs::msg::Odometry::SharedPtr odom_msg);
     void publishParticlesAndPose();
+    void resampleParticles();
     void publish_map();
     void saveMap();
     void saveMapSrv(const std::shared_ptr<std_srvs::srv::Empty::Request>,
                     std::shared_ptr<std_srvs::srv::Empty::Response>);
     
-    int num_particles_ = 100;
+    int num_particles_ = 1000;
     double map_res_ = 0.01;
     int map_width_ = 2000;  // 200m at 0.01 res = 2000 cells
     int map_height_ = 2000;

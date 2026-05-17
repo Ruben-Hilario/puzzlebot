@@ -15,6 +15,7 @@
 #include <sstream>
 #include <string>
 
+
 namespace puzzlebot_localisation {
 
 struct NodeState{
@@ -36,15 +37,24 @@ struct NodeAStar {
 };
 
 
+// struct Key {
+//     double k1;
+//     double k2;
+//     bool operator<(const Key& other) const {
+//         return k1 < other.k1 || (k1 == other.k1 && k2 < other.k2);
+//     }
+//     bool operator>(const Key& other) const {
+//         return other < *this;
+//     }
+// };
 
-struct Key {
-    double k1;
-    double k2;
-    bool operator<(const Key& other) const {
-        return k1 < other.k1 || (k1 == other.k1 && k2 < other.k2);
-    }
-    bool operator>(const Key& other) const {
-        return other < *this;
+struct State {
+    int x, y;
+    double k1, k2;
+
+    bool operator<(const State& other) const {
+        if (k1 != other.k1) return k1 > other.k1;
+        return k2 > other.k2;
     }
 };
 
@@ -55,7 +65,7 @@ public:
     
 private:
     //  A*
-    std::vector<std::pair<int,int>> aStar(
+    std::vector<std::pair<int,int>> aStar(              //Add margin from pixels to path planner
 		// const std::vector<int8_t>& map_data
         // std::pair<int,int> map_size,
         // std::pair<int,int> start, std::pair<int,int> goal
@@ -68,14 +78,50 @@ private:
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     std::vector<std::pair<int,int>> path;
+    bool initial_path_ = false;
+
     
     std::pair<int,int> map_size;
     std::pair<int,int> start, goal;
     bool planning_ = false;
     rclcpp::TimerBase::SharedPtr timer_;
+};
 
+class DStar : public rclcpp::Node {
+public:
+    DStar(std::pair<int,int> start, std::pair<int,int> goal);
+    ~DStar() = default;
+
+private:
+    void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+    void publish_path();
+
+    // D* Lite Core Functions
+    std::pair<double, double> calculate_key(int x, int y);
+    void update_vertex(int x, int y);
+    void compute_shortest_path();
+    double heuristic(int x1, int y1, int x2, int y2);
+    double get_cost(int x, int y);
+
+    // ROS2 Utilities
+    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+
+    // Map Data
+    nav_msgs::msg::OccupancyGrid::SharedPtr current_map_;
+    std::pair<int,int> start, goal;
+     // Example coordinates
+    double km_{0.0};
+
+    // D* Lite Data structures
+    std::map<std::pair<int, int>, double> g_, rhs_;
+    std::priority_queue<State> queue_;
+
+    bool planning_ = false;
+    rclcpp::TimerBase::SharedPtr timer_;
 
 };
+
 
 class Utils : public rclcpp::Node{
 public:

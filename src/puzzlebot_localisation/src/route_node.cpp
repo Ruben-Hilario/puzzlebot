@@ -124,15 +124,16 @@
 //     return 0;
 // }
 
+//std::pair<int,int> start(900, 900);
+//std::pair<int,int> goal(1200, 1100);
 #include "puzzlebot_localisation/utils.hpp"
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-    //std::pair<int,int> start(900, 900);
-    //std::pair<int,int> goal(1200, 1100);
     std::pair<int,int> start(1,1);
     std::pair<int,int> goal(6,8);
-    auto node = std::make_shared<puzzlebot_localisation::PathPlanner>(start, goal);
+    // auto node = std::make_shared<puzzlebot_localisation::PathPlanner>(start, goal);
+    auto node = std::make_shared<puzzlebot_localisation::DStar>(start,goal);
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;

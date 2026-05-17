@@ -13,7 +13,7 @@ PathPlanner::PathPlanner(std::pair<int,int> start, std::pair<int,int> goal) : No
         if (planning_) {
             publish_path();
         } else {
-            RCLCPP_WARN(this->get_logger(), "Path not found.");
+            RCLCPP_INFO(this->get_logger(), "Path not found.");
         }
         });
 }
@@ -24,8 +24,14 @@ void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Map: %dx%d", msg->info.width, msg->info.height);
     current_map_ = msg;
     map_size = std::make_pair(msg->info.width, msg->info.height);
-    
-    path = aStar();
+    if (!initial_path_){
+        path = aStar();
+        initial_path_ = true;
+    }
+    else{   
+        //path = DStar();
+        return;
+    }
 }
 
 // --- IMPLEMENTACIÓN A* (Optimized for flat vector) ---
@@ -102,6 +108,7 @@ std::vector<std::pair<int, int>> PathPlanner::aStar(
 
     return {};
 }
+
 void PathPlanner::publish_path(){
     // Convert vector of pairs to nav_msgs::msg::Path
     auto path_msg = nav_msgs::msg::Path();
@@ -124,6 +131,272 @@ void PathPlanner::publish_path(){
     
     path_pub_->publish(path_msg);
     RCLCPP_INFO(this->get_logger(), "Path found");
+}
+
+
+DStar::DStar(std::pair<int,int> start, std::pair<int,int> goal) : Node("dstar_node"), start(start), goal(goal) {
+    // Constructor can be used to initialize any necessary variables or subscriptions
+    
+    map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+        "map", 10, std::bind(&DStar::mapCb, this, std::placeholders::_1));
+    
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
+    
+    timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
+        if (planning_) {
+            RCLCPP_INFO(this->get_logger(),"Path found, maybe");
+            publish_path();
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Path not found.");
+        }
+        });
+}
+
+void DStar::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+    if (planning_) {
+        RCLCPP_INFO(this->get_logger(), "Path already done.");
+        return;
+    }
+    RCLCPP_INFO(this->get_logger(),"Map Callback");
+
+    current_map_ = msg;
+    // Initialize or Reset D* Lite on first 
+    if (g_.empty()) {
+        for (unsigned int i = 0; i < msg->info.width; ++i) {
+            for (unsigned int j = 0; j < msg->info.height; ++j) {
+                g_[{i, j}] = INFINITY;
+                rhs_[{i, j}] = INFINITY;
+            }
+        }
+        rhs_[{goal.first, goal.second}] = 0;
+        auto keys = calculate_key(goal.first, goal.second);
+        queue_.push({goal.first, goal.second, keys.first, keys.second});
+    }
+    RCLCPP_INFO(this->get_logger(),"Compute Shortest Path");
+    compute_shortest_path();
+    RCLCPP_INFO(this->get_logger(),"Boutta publish path");
+    publish_path();
+    planning_ = true;
+}
+
+double DStar::heuristic(int x1, int y1, int x2, int y2) {
+    return std::hypot(x1 - x2, y1 - y2);
+}
+
+// double DStar::get_cost(int x, int y) {
+//     if (x < 0 || x >= (int)current_map_->info.width || y < 0 || y >= (int)current_map_->info.height)
+//         return INFINITY;
+    
+//     int index = x + y * current_map_->info.width;
+//     if (current_map_->data[index] > 50) return INFINITY; // Obstacle threshold
+//     return 1.0;
+// }
+double DStar::get_cost(int x, int y) {
+    if (x < 0 || x >= (int)current_map_->info.width || y < 0 || y >= (int)current_map_->info.height)
+        return INFINITY;
+    
+    int index = x + y * current_map_->info.width;
+    int8_t cell = current_map_->data[index];
+    
+    if (cell > 50 || cell == -1) return INFINITY; // Treat unknown as obstacle for safety
+    return 1.0;
+}   
+
+std::pair<double, double> DStar::calculate_key(int x, int y) {
+    double min_g_rhs = std::min(g_[{x, y}], rhs_[{x, y}]);
+    return {min_g_rhs + heuristic(start.first, start.second, x, y) + km_, min_g_rhs};
+}
+
+void DStar::update_vertex(int x, int y) {
+    if (x != goal.first || y != goal.second) {
+        double min_rhs = INFINITY;
+        // Check 8-connected neighbors
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                if (dx == 0 && dy == 0) continue;
+                min_rhs = std::min(min_rhs, get_cost(x + dx, y + dy) + g_[{x + dx, y + dy}]);
+            }
+        }
+        rhs_[{x, y}] = min_rhs;
+    }
+    // Remove from queue if exists (simplified for C++ queue)
+    if (g_[{x, y}] != rhs_[{x, y}]) {
+        auto keys = calculate_key(x, y);
+        queue_.push({x, y, keys.first, keys.second});
+    }
+}
+
+void DStar::compute_shortest_path() {
+    int i = 0;
+    while (!queue_.empty() && 
+          (queue_.top().k1 < calculate_key(start.first, start.second).first || 
+           rhs_[{start.first, start.second}] != g_[{start.first, start.second}])) {
+        
+        State top = queue_.top();
+        queue_.pop();
+
+        int u_x = top.x;
+        int u_y = top.y;
+
+        // --- STALE NODE CHECK ---
+        // If the key we just popped is older than the current best key for this cell, skip it.
+        auto current_key = calculate_key(u_x, u_y);
+        if (top.k1 > current_key.first + 0.00001) { 
+            continue; 
+        }
+        // ------------------------
+
+        if (i++ % 1000 == 0) {
+            RCLCPP_INFO(this->get_logger(), "Iteration %d, Processing node: %d, %d", i, u_x, u_y);
+        }
+
+        if (g_[{u_x, u_y}] > rhs_[{u_x, u_y}]) {
+            g_[{u_x, u_y}] = rhs_[{u_x, u_y}];
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (dx == 0 && dy == 0) continue;
+                    update_vertex(u_x + dx, u_y + dy);
+                }
+            }
+        } else {
+            g_[{u_x, u_y}] = INFINITY;
+            update_vertex(u_x, u_y); // Update itself
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (dx == 0 && dy == 0) continue;
+                    update_vertex(u_x + dx, u_y + dy);
+                }
+            }
+        }
+        
+        if (i > 500000) { // Emergency break for debugging
+            RCLCPP_ERROR(this->get_logger(), "D* Lite: Max iterations reached!");
+            break;
+        }
+    }
+}
+
+// void DStar::publish_path(){
+//     // Convert vector of pairs to nav_msgs::msg::Path
+//     nav_msgs::msg::Path path_msg;
+//     path_msg.header.frame_id = "map";
+//     path_msg.header.stamp = this->now();
+//     for (const auto& point : path) {
+//         geometry_msgs::msg::PoseStamped pose;
+//         pose.header.frame_id = "map";
+//         pose.header.stamp = this->now();
+//         //Convert to world coordinates
+//         pose.pose.position.x = (point.first * current_map_->info.resolution) + 
+//                                 current_map_->info.origin.position.x;
+//         pose.pose.position.y = (point.second * current_map_->info.resolution) + 
+//                                 current_map_->info.origin.position.y;
+        
+//         pose.pose.position.z = 0.0;
+//         pose.pose.orientation.w = 1.0;
+//         path_msg.poses.push_back(pose);
+//     }
+    
+//     path_pub_->publish(path_msg);
+//     RCLCPP_INFO(this->get_logger(), "Path found");
+// }
+
+
+// void DStar::publish_path() {
+//     nav_msgs::msg::Path path;
+//     path.header.frame_id = "map";
+//     path.header.stamp = this->now();
+
+//     int curr_x = start.first;
+//     int curr_y = start.second;
+
+//     while (curr_x != goal.first || curr_y != goal.second) {
+//         geometry_msgs::msg::PoseStamped pose;
+//         pose.pose.position.x = curr_x * current_map_->info.resolution;
+//         pose.pose.position.y = curr_y * current_map_->info.resolution;
+//         path.poses.push_back(pose);
+
+//         // Move to neighbor with minimum cost
+//         double min_val = INFINITY;
+//         int next_x = curr_x, next_y = curr_y;
+//         for (int dx = -1; dx <= 1; ++dx) {
+//             for (int dy = -1; dy <= 1; ++dy) {
+//                 double val = get_cost(curr_x + dx, curr_y + dy) + g_[{curr_x + dx, curr_y + dy}];
+//                 if (val < min_val) {
+//                     min_val = val;
+//                     next_x = curr_x + dx;
+//                     next_y = curr_y + dy;
+//                 }
+//             }
+//         }
+//         curr_x = next_x;
+//         curr_y = next_y;
+//         if (path.poses.size() > 1000) break; // Safety break
+//     }
+//     path_pub_->publish(path);
+// }
+
+void DStar::publish_path() {
+    if (!current_map_) return;
+
+    nav_msgs::msg::Path path_msg;
+    path_msg.header.frame_id = current_map_->header.frame_id; // Use map frame from msg
+    path_msg.header.stamp = this->now();
+
+    int curr_x = start.first;
+    int curr_y = start.second;
+
+    double res = current_map_->info.resolution;
+    double origin_x = current_map_->info.origin.position.x;
+    double origin_y = current_map_->info.origin.position.y;
+
+    // Follow the gradient of g values from start to goal
+    while (curr_x != goal.first || curr_y != goal.second) {
+        geometry_msgs::msg::PoseStamped pose;
+        pose.header = path_msg.header;
+        
+        // CRITICAL: Transform grid to World Coordinates
+        pose.pose.position.x = (curr_x * res) + origin_x;
+        pose.pose.position.y = (curr_y * res) + origin_y;
+        pose.pose.position.z = 0.0;
+        pose.pose.orientation.w = 1.0;
+        
+        path_msg.poses.push_back(pose);
+
+        double min_val = std::numeric_limits<double>::infinity();
+        int next_x = curr_x;
+        int next_y = curr_y;
+
+        // Look for the neighbor with the lowest g-score
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                if (dx == 0 && dy == 0) continue;
+                int nx = curr_x + dx;
+                int ny = curr_y + dy;
+                
+                // Using g_ because D* Lite propagates values from goal -> start
+                double val = get_cost(nx, ny) + g_[{nx, ny}];
+                if (val < min_val) {
+                    min_val = val;
+                    next_x = nx;
+                    next_y = ny;
+                }
+            }
+        }
+
+        // If we get stuck (no path), break
+        if (next_x == curr_x && next_y == curr_y) {
+            RCLCPP_ERROR(this->get_logger(), "D* Path extraction stuck!");
+            break;
+        }
+
+        curr_x = next_x;
+        curr_y = next_y;
+        
+        if (path_msg.poses.size() > 2000) break; 
+    }
+    
+    path_pub_->publish(path_msg);
+    RCLCPP_INFO(this->get_logger(), "D* Path Published with %zu poses", path_msg.poses.size());
 }
 
 Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
@@ -260,7 +533,7 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(/*const std::string& yaml
         double prob = static_cast<double>(pgm_data[i]) / max_val; // use this for the one done with gazebo
         // double prob = 1.0 - (static_cast<double>(pgm_data[i]) / max_val); 
         if (negate) prob = 1.0 - prob;
-        
+
         if (prob > occupied_thresh) {
             map.data[i] = 100; // Occupied
         } else if (prob < free_thresh) {

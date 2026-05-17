@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+from scipy.fftpack import dct
 #import lisbrosa
 
 class VoiceUtils():
@@ -161,11 +162,47 @@ class VoiceUtils():
 
         a = 0.5 * (P_full + Q_full)
         return a[:-1]
+    
+    def extract_mfcc(self, frames, fs, n_mfcc=13, n_filters=26):
+        """Calculates MFCCs for a set of frames."""
+        # 1. Power Spectrum
+        NFFT = 512
+        mag_frames = np.absolute(np.fft.rfft(frames, NFFT))  # Magnitude of FFT
+        pow_frames = ((1.0 / NFFT) * (mag_frames ** 2))     # Power Spectrum
+
+        # 2. Mel Filter Banks
+        low_freq_mel = 0
+        high_freq_mel = (2595 * np.log10(1 + (fs / 2) / 700))  # Convert Hz to Mel
+        mel_points = np.linspace(low_freq_mel, high_freq_mel, n_filters + 2)  # Equally spaced in Mel scale
+        hz_points = (700 * (10**(mel_points / 2595) - 1))      # Convert Mel back to Hz
+        bin = np.floor((NFFT + 1) * hz_points / fs)
+
+        fbank = np.zeros((n_filters, int(np.floor(NFFT / 2 + 1))))
+        for m in range(1, n_filters + 1):
+            f_m_minus = int(bin[m - 1])   # left
+            f_m = int(bin[m])             # center
+            f_m_plus = int(bin[m + 1])    # right
+
+            for k in range(f_m_minus, f_m):
+                fbank[m - 1, k] = (k - bin[m - 1]) / (bin[m] - bin[m - 1])
+            for k in range(f_m, f_m_plus):
+                fbank[m - 1, k] = (bin[m + 1] - k) / (bin[m + 1] - bin[m])
+
+        filter_banks = np.dot(pow_frames, fbank.T)
+        filter_banks = np.where(filter_banks == 0, np.finfo(float).eps, filter_banks)  # Numerical stability
+        filter_banks = 20 * np.log10(filter_banks)  # dB
+
+        # 3. DCT to get Coefficients
+        mfcc = dct(filter_banks, type=2, axis=1, norm='ortho')[:, :n_mfcc]
+        
+        # 4. Mean Normalization (Optional but improves robustness)
+        mfcc -= (np.mean(mfcc, axis=0) + 1e-8)
+        return mfcc
 
 class VectorialQuantization():
     def __init__(self):
         self.utils = VoiceUtils()
-    def autocorr_lpc(self,a):
+    def autocorr_   (self,a):
         p = len(a) - 1
         r_a = np.zeros(p + 1)
         for i in range(p + 1):
