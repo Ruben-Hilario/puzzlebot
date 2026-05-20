@@ -11,7 +11,7 @@ from launch.substitutions.path_join_substitution import PathJoinSubstitution
 ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='true'  , choices=['true', 'false'], description='Use sim time'),
     DeclareLaunchArgument('robot_name', default_value='puzzlebot', description='Ignition model name'),
-    DeclareLaunchArgument('world', default_value='world1', description='World name'),
+    DeclareLaunchArgument('world', default_value='track_world', description='World name'),
 ]
 
 def generate_launch_description():
@@ -24,6 +24,7 @@ def generate_launch_description():
     gazebo_path = get_package_share_directory('puzzlebot_description') + '/models/' #"/home/testeo/src/puzzlebot_description/models/"
     robot_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
     rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/puzzlebot.rviz'
+    rviz_map = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
 
     robot_description = Command(['cat ', robot_path])
 
@@ -126,7 +127,7 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d',rviz_path],
+        arguments=['-d',rviz_map],
         parameters=[{'use_sim_time':use_sim_time}]
     )
 

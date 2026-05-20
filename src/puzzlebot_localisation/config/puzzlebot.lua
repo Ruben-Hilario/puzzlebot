@@ -6,7 +6,7 @@ options = {
   trajectory_builder = TRAJECTORY_BUILDER,
   map_frame = "map",
   tracking_frame = "base_link",
-  published_frame = "base_link",
+  published_frame = "odom",
   odom_frame = "odom",
   provide_odom_frame = false,
   publish_frame_projected_to_2d = true,
@@ -28,7 +28,7 @@ options = {
   landmarks_sampling_ratio = 1.,
 }
 
-MAP_BUILDER.use_trajectory_builder_2d = true
+MAP_BUILDER.use_trajectory_builder_2d = true  
 
 TRAJECTORY_BUILDER_2D.min_range = 0.12
 TRAJECTORY_BUILDER_2D.max_range = 4.5
