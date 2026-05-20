@@ -54,8 +54,8 @@ private:
     
     int num_particles_ = 1000;
     double map_res_ = 0.01;
-    int map_width_ = 2000;  // 200m at 0.01 res = 2000 cells
-    int map_height_ = 2000;
+    int map_width_ = 1000;  // 200m at 0.01 res = 2000 cells
+    int map_height_ = 1000;
     double map_origin_x_;
     double map_origin_y_;
     std::vector<Particle> particles_;

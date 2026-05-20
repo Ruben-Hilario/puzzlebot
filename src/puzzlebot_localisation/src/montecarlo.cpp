@@ -54,10 +54,9 @@ void MonteCarlo::odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
     double dx = msg->twist.twist.linear.x * dt;
     double dy = msg->twist.twist.linear.y * dt;
     double da = msg->twist.twist.angular.z * dt;
-
     // this was added to reduce shaking
     if (std::abs(dx) < 1e-4 && std::abs(dy) < 1e-4 && std::abs(da) < 1e-4) {
-        return; 
+        return;
     }
 
     for (auto& p : particles_) {
@@ -65,6 +64,24 @@ void MonteCarlo::odomCb(const nav_msgs::msg::Odometry::SharedPtr msg) {
         p.y += dy + dist_pos(gen_);
         p.theta += da + dist_rot(gen_);
     }
+
+    // double dx_local = msg->twist.twist.linear.x * dt;
+    // double dy_local = msg->twist.twist.linear.y * dt;
+    // double da = msg->twist.twist.angular.z * dt;
+
+    // if (std::abs(dx_local) < 1e-4 && std::abs(dy_local) < 1e-4 && std::abs(da) < 1e-4) {
+    //     return; 
+    // }
+
+    // for (auto& p : particles_) {
+    //     // Standard 2D rotation matrix transformation
+    //     double dx_global = dx_local * std::cos(p.theta) - dy_local * std::sin(p.theta);
+    //     double dy_global = dx_local * std::sin(p.theta) + dy_local * std::cos(p.theta);
+
+    //     p.x += dx_global + dist_pos(gen_);
+    //     p.y += dy_global + dist_pos(gen_);
+    //     p.theta += da + dist_rot(gen_);
+    // }
 }
 
 void MonteCarlo::scanCb(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
@@ -229,36 +246,6 @@ void MonteCarlo::saveMapSrv(const std::shared_ptr<std_srvs::srv::Empty::Request>
     this->saveMap();
 }
 
-/*
-
-void MonteCarlo::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
-    map_ = *msg;
-    map_received_ = true;
-    RCLCPP_INFO(this->get_logger(), "Received map.");
-}
-
-
-void MonteCarlo::motionModel(double rot1, double trans, double rot2) {
-    if (std::abs(trans) < 1e-3 && std::abs(rot1) < 1e-3 && std::abs(rot2) < 1e-3) return;
-
-    double alpha1 = 0.05, alpha2 = 0.05, alpha3 = 0.1, alpha4 = 0.05;
-
-    std::normal_distribution<double> noise_rot1(0.0, alpha1*std::abs(rot1) + alpha2*trans);
-    std::normal_distribution<double> noise_trans(0.0, alpha3*trans + alpha4*(std::abs(rot1)+std::abs(rot2)));
-    std::normal_distribution<double> noise_rot2(0.0, alpha1*std::abs(rot2) + alpha2*trans);
-
-    for (auto& p : particles_) {
-        double r1_hat = rot1 - noise_rot1(gen_);
-        double t_hat = trans - noise_trans(gen_);
-        double r2_hat = rot2 - noise_rot2(gen_);
-
-        p.x += t_hat * std::cos(p.theta + r1_hat);
-        p.y += t_hat * std::sin(p.theta + r1_hat);
-        p.theta += r1_hat + r2_hat;
-        p.theta = std::atan2(std::sin(p.theta), std::cos(p.theta));
-    }
-}
-*/
 void MonteCarlo::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
     double total_weight = 0.0;
     double max_range = msg->range_max;
@@ -278,7 +265,6 @@ void MonteCarlo::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
             // Simple map lookup likelihood
             int mx = (hit_x - map_.info.origin.position.x) / map_.info.resolution;
             int my = (hit_y - map_.info.origin.position.y) / map_.info.resolution;
-
             if (mx >= 0 && mx < (int)map_.info.width && my >= 0 && my < (int)map_.info.height) {
                 int map_val = map_.data[my * map_.info.width + mx];
                 if (map_val > 50) {

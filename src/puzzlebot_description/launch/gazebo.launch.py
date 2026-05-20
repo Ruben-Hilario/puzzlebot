@@ -36,7 +36,7 @@ def generate_launch_description():
         value=[os.path.join(pkg_gazebo, 'models/plugins') + ':' + '$GZ_SIM_SYSTEM_PLUGIN_PATH']
     )
 
-    ign_gazebo_launch = PathJoinSubstitution([pkg_ros_ign_gazebo, 'launch', 'gz_sim.launch.py'])
+    ign_gazebo  _launch = PathJoinSubstitution([pkg_ros_ign_gazebo, 'launch', 'gz_sim.launch.py'])
 
     # Bridge for cmd_vel and encoders
     bridge = Node(

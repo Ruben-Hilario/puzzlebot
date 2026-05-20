@@ -1,4 +1,4 @@
-image: montecarlo_map.pgm
+image: middle.pgm
 resolution: 0.01
 origin: [-5, -5, 0.0]
 negate: 0

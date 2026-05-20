@@ -153,16 +153,6 @@ def generate_launch_description():
     #     ]
     # )
 
-    
-
-    odom_node = Node(
-        package='puzzlebot_description',
-        executable='joint_pub',
-        name='odometry_node',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
-
     return LaunchDescription([
         *ARGUMENTS,
         ign_resource_path,
@@ -175,5 +165,4 @@ def generate_launch_description():
         joint_states_node,
         #joint_states_bridge,
         rviz_node,
-        odom_node
     ])
