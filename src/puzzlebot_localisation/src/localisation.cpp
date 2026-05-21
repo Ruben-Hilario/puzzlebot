@@ -94,7 +94,7 @@ void PuzzlebotLocalisation::publish_odometry() {
     
     odom_msg.header.stamp = this->get_clock()->now();
     odom_msg.header.frame_id = "odom";
-    odom_msg.child_frame_id = "base_footprint";
+    odom_msg.child_frame_id = "base_link";
 
     //Position
     odom_msg.pose.pose.position.x = X_;
@@ -111,6 +111,7 @@ void PuzzlebotLocalisation::publish_odometry() {
     odom_msg.twist.twist.angular.z = Omega_;
 
     odom_pub_->publish(odom_msg);
+    //RCLCPP_INFO(this->get_logger(), "Published Odometry: X=%.3f, Y=%.3f, Th=%.3f", X_, Y_, Th_);
 }
 
 }

@@ -7,4 +7,6 @@ sudo apt-get install ros-humble-nav2-map-server
 sudo apt-get install imagemagick
 sudo apt-get install ros-humble-cartographer
 sudo apt-get install ros-humble-cartographer-*
+sudo apt-get install ros-humble-navigation2
+sudo apt-get install ros-humble-nav2-bringup
 ./clone.sh

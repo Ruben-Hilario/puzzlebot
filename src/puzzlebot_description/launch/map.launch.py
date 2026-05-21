@@ -51,7 +51,8 @@ def generate_launch_description():
             '/VelocityEncR@std_msgs/msg/Float32[gz.msgs.Float',
             '/VelocityEncL@std_msgs/msg/Float32[gz.msgs.Float'
         ],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
     )
 
     # Clock Bridge
@@ -114,6 +115,14 @@ def generate_launch_description():
         )]
     )
 
+    lidar_tf_bridge_node = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_tf_bridge',
+        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Launch Ignition Gazebo
     ignition_gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ign_gazebo_launch]),
@@ -160,7 +169,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}]
     )
-    
+
     return LaunchDescription([
         *ARGUMENTS,
         ign_resource_path,
@@ -170,6 +179,7 @@ def generate_launch_description():
         bridge,
         camera_bridge,
         lidar_bridge,
+        lidar_tf_bridge_node,
         joint_states_node,
         #joint_states_bridge,
         rviz_node,

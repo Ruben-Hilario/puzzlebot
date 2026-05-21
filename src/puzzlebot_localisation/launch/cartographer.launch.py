@@ -26,12 +26,12 @@ def generate_launch_description():
     config_dir = get_package_share_directory('puzzlebot_localisation') +  '/config/'
     config_name = 'puzzlebot.lua'
     rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
-    
+
     cartographer_node = Node(
         package='cartographer_ros',
         executable='cartographer_node',
         output='screen',
-        parameters=[{'use_sim_time':use_sim_time}],
+        parameters=[{'use_sim_time' : use_sim_time}],
         arguments = ['-configuration_directory', config_dir,
                 '-configuration_basename', config_name]
     )
@@ -56,6 +56,14 @@ def generate_launch_description():
             '-publish_period_sec', publish_period_sec
         ]
     )
+    
+    localisation_node = Node(
+        package='puzzlebot_localisation',
+        executable='odom_node',
+        name='odom_node',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
                 
     # occupancy_grid_node = IncludeLaunchDescription(
         # PythonLaunchDescriptionSource([ThisLaunchFileDir(), 'occupancy_grid.launch.py']),
@@ -68,7 +76,8 @@ def generate_launch_description():
     
     return LaunchDescription([
         *ARGUMENTS, 
+        localisation_node,
         cartographer_node, 
-        #rviz_node,        
         occupancy_grid_node
+        #rviz_node,        
     ])
