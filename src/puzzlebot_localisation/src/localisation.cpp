@@ -16,7 +16,7 @@ PuzzlebotLocalisation::PuzzlebotLocalisation() : Node("Puzzlebot_localisation") 
     Omega_ = 0.0;
 
 	//Uncertainty
-	robot_state_ = {0.0};
+	//robot_state_ = {0.0};
 	Sigma_ = Eigen::Matrix3d::Zero();
 	Sigma_d_ = Eigen::Matrix2d::Zero();
 	Ak_ = Eigen::Matrix3d::Identity();
@@ -135,8 +135,8 @@ void PuzzlebotLocalisation::publish_odometry() {
 }
 
 void PuzzlebotLocalisation::uncertainty(double dt){
-	Ak(0, 2) = -V_ * dt * std::sin(Th_);
-    Ak(1, 2) =  V_ * dt * std::cos(Th_);
+	Ak_(0, 2) = -V_ * dt * std::sin(Th_);
+    Ak_(1, 2) =  V_ * dt * std::cos(Th_);
 
     Sigma_d_(0, 0) = k_r_ * std::abs(wr_val_);
     Sigma_d_(1, 1) = k_l_ * std::abs(wl_val_);
@@ -150,12 +150,10 @@ void PuzzlebotLocalisation::uncertainty(double dt){
     Jw(2, 0) = rot_coef;                   Jw(2, 1) = -rot_coef;
 
     // 4. Process Noise Matrix Qk
-    Eigen::Matrix3d Qk = Jw * Sigma_delta * Jw.transpose();
+    Eigen::Matrix3d Qk = Jw * Sigma_d_ * Jw.transpose();
 
     // 5. Propagate Covariance: Sigma = Ak * Sigma * Ak^T + Qk
-    Sigma_ = Ak * Sigma_ * Ak.transpose() + Qk;
-    
-
+    Sigma_ = Ak_ * Sigma_ * Ak_.transpose() + Qk;
 }
 
 }

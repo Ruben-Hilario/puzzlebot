@@ -36,15 +36,6 @@ def generate_launch_description():
                 '-configuration_basename', config_name]
     )
 
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', rviz_path],
-        parameters =[{'use_sim_time': use_sim_time}],
-        output='screen'
-    )
-
     occupancy_grid_node = Node(
         package='cartographer_ros',
         executable='cartographer_occupancy_grid_node',
@@ -66,7 +57,7 @@ def generate_launch_description():
     )
                 
     occupancy_grid_bridge = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([ThisLaunchFileDir(), 'occupancy_grid.launch.py']),
+        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/occupancy_grid.launch.py']),
         launch_arguments={
             'use_sim_time':use_sim_time,
             'resolution':resolution,
@@ -74,11 +65,15 @@ def generate_launch_description():
             'use_rviz':use_rviz
         }.items()
     )
+
+
     
     return LaunchDescription([
         *ARGUMENTS, 
         localisation_node,
         cartographer_node, 
+        lidar_tf_bridge_node,
+        odom_node,
         occupancy_grid_node,
         occupancy_grid_bridge,
     ])

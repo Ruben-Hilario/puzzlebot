@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_share_directory
+from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
 ARGUMENTS=[
     DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true','false'],description='use simulation time'),
@@ -15,7 +16,8 @@ def generate_launch_description():
     publish_period_sec = LaunchConfiguration('publish_period_sec', default='1.0')
     use_rviz = LaunchConfiguration('use_rviz', default='true')
     rviz_map = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
-
+    robot_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
+    robot_description = Command(['cat ', robot_path])
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -44,9 +46,18 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+    lidar_tf_bridge_node = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_tf_bridge',
+        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'laser'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
 
     return LaunchDescription([
-    rviz_node,
     joint_states_node,
-    odom_node  
+    odom_node,
+    lidar_tf_bridge_node,
+    rviz_node,
     ])
