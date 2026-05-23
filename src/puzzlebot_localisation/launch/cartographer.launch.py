@@ -18,15 +18,6 @@ ARGUMENTS = [
 
 
 def generate_launch_description():
-    use_sim_time = LaunchConfiguration('use_sim_time')
-    use_rviz = LaunchConfiguration('use_rviz')
-    resolution = LaunchConfiguration('resolution')
-    publish_period_sec = LaunchConfiguration('publish_period_sec')
-
-    config_dir = get_package_share_directory('puzzlebot_localisation') +  '/config/'
-    config_name = 'puzzlebot.lua'
-    rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
-
     cartographer_node = Node(
         package='cartographer_ros',
         executable='cartographer_node',
@@ -62,18 +53,15 @@ def generate_launch_description():
             'use_sim_time':use_sim_time,
             'resolution':resolution,
             'publish_period_sec':publish_period_sec,
-            'use_rviz':use_rviz
+            'use_rviz':use_rviz,
+            'rviz_path':rviz_path,
         }.items()
     )
-
-
-    
+   
     return LaunchDescription([
         *ARGUMENTS, 
-        localisation_node,
         cartographer_node, 
-        lidar_tf_bridge_node,
-        odom_node,
         occupancy_grid_node,
         occupancy_grid_bridge,
+        localisation_node,
     ])

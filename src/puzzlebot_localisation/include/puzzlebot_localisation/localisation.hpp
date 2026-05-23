@@ -38,6 +38,7 @@ namespace puzzlebot_localisation{
         // Estado interno
         bool first_;
         rclcpp::Time last_time_;
+        std::string namespace_;
         
         // Velocidades
         double wr_val_, wl_val_;

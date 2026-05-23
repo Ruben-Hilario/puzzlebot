@@ -12,7 +12,7 @@ ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='true'  , choices=['true', 'false'], description='Use sim time'),
     DeclareLaunchArgument('robot_name', default_value='puzzlebot', description='Ignition model name'),
     DeclareLaunchArgument('world', default_value='track_world', description='World name'),
-]
+    ]
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -51,7 +51,8 @@ def generate_launch_description():
             '/VelocityEncR@std_msgs/msg/Float32[gz.msgs.Float',
             '/VelocityEncL@std_msgs/msg/Float32[gz.msgs.Float'
         ],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
     )
 
     # Clock Bridge
@@ -114,6 +115,14 @@ def generate_launch_description():
         )]
     )
 
+    lidar_tf_bridge_node = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_tf_bridge',
+        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Launch Ignition Gazebo
     ignition_gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ign_gazebo_launch]),
@@ -153,8 +162,6 @@ def generate_launch_description():
     #     ]
     # )
 
-    
-
     odom_node = Node(
         package='puzzlebot_description',
         executable='joint_pub',
@@ -172,8 +179,9 @@ def generate_launch_description():
         bridge,
         camera_bridge,
         lidar_bridge,
-        joint_states_node,
+        #lidar_tf_bridge_node,
+        #joint_states_node,
         #joint_states_bridge,
-        rviz_node,
-        odom_node
+        #rviz_node,
+        #odom_node,
     ])

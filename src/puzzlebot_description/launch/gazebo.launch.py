@@ -2,7 +2,7 @@ import yaml
 import os
 from launch_ros.actions import Node
 from launch import LaunchDescription
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, Command
 from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -24,6 +24,7 @@ def generate_launch_description():
     gazebo_path = get_package_share_directory('puzzlebot_description') + '/models/' #"/home/testeo/src/puzzlebot_description/models/"
     robot_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
     rviz_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.rviz'
+    robot_description = Command(['cat ', robot_path])
 
     # Environment Variables
     ign_resource_path = SetEnvironmentVariable(
@@ -138,6 +139,6 @@ def generate_launch_description():
         clock_bridge,
         bridge,
         camera_bridge,
-        lidar_bridge,
+        #lidar_bridge, 
         # rviz_node,
     ])

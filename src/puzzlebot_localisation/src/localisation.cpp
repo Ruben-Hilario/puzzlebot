@@ -3,6 +3,8 @@
 
 namespace puzzlebot_localisation{
 PuzzlebotLocalisation::PuzzlebotLocalisation() : Node("Puzzlebot_localisation") {
+    namespace_ = this->get_namespace();
+    RCLCPP_INFO(this->get_logger(), "Namespace: %s", namespace_.c_str());
     X_ = 0.0; Y_ = 0.0; Th_ = 0.0;
     l_ = 0.18;
     r_ = 0.05;

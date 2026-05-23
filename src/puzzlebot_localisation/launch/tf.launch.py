@@ -5,27 +5,15 @@ from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
 ARGUMENTS=[
     DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true','false'],description='use simulation time'),
-    DeclareLaunchArgument('publish_period_sec', default_value='0.1', description='Occupancy grid publishing period'),
-    DeclareLaunchArgument('resolution', default_value='0.05', description='Occupancy grid resolution'),
     DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz'),
+    DeclareLaunchArgument('robot_description', default_value='')
 ]
 
+#Remapping for real puzzlebot
 def generate_launch_description():
-    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    resolution = LaunchConfiguration('resolution', default='0.05')
-    publish_period_sec = LaunchConfiguration('publish_period_sec', default='1.0')
-    use_rviz = LaunchConfiguration('use_rviz', default='true')
-
-    rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
-    
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        output='screen',
-        arguments=['-d',rviz_map],
-        parameters=[{'use_sim_time':use_sim_time}]
-    )
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    use_rviz = LaunchConfiguration('use_rviz')
+    robot_description = LaunchConfiguration('robot_description')
 
     joint_states_node = Node(
         package='robot_state_publisher',
@@ -50,7 +38,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='lidar_tf_bridge',
-        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'laser'],
+        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
@@ -59,5 +47,4 @@ def generate_launch_description():
     joint_states_node,
     odom_node,
     lidar_tf_bridge_node,
-    rviz_node,
     ])

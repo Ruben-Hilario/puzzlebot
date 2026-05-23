@@ -9,7 +9,7 @@ import math
 class PuzzleBotOdom(Node):
     def __init__(self):
         super().__init__('odometry_node')
-
+        self.namespace = self.get_namespace()
         # Parámetros físicos (igual que tu URDF/plugin)
         self.R = 0.05    # wheel_radius
         self.L = 0.18    # robot_width

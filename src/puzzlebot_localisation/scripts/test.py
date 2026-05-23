@@ -1,40 +1,108 @@
+#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from nav_msgs.msg import Path
-from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Header
+from geometry_msgs.msg import Twist, PoseStamped
+from std_msgs.msg import Float32
+import math
+import numpy as np
 
-class PathPublisher(Node):
+
+class PuzzleBotKinematic(Node):
     def __init__(self):
-        super().__init__('path_publisher')
-        self.publisher_ = self.create_publisher(Path, '/path', 10)
-        timer_period = 1.0
-        self.timer = self.create_timer(timer_period, self.publish_path)
+        super().__init__('puzzlebot_kinematic')
 
-    def publish_path(self):
-        path_msg = Path()
-        path_msg.header = Header()
-        path_msg.header.stamp = self.get_clock().now().to_msg()
-        path_msg.header.frame_id = 'map'
+        # Parametros configurables dede launch
+        self.declare_parameter('wheel_radius', 0.05) # r [meters]
+        self.declare_parameter('wheel_base', 0.19) # l [meters]
+        self.declare_parameter('sampling_time', 0.05) # dt [s]
+        self.declare_parameter('x0', 0.0)
+        self.declare_parameter('y0', 0.0)
+        self.declare_parameter('theta0', 0.0)
+        self.declare_parameter('k_r', 0.016)  # right encoder noise coefficient
+        self.declare_parameter('k_l', 0.016)  # left encoder noise coefficient
+        
+        self.r = self.get_parameter('wheel_radius').value
+        self.l = self.get_parameter('wheel_base').value
+        self.dt = self.get_parameter('sampling_time').value
+        self.k_r = self.get_parameter('k_r').value
+        self.k_l = self.get_parameter('k_l').value
 
-        # Example: Adding a simple path
-        for i in range(5):
-            pose = PoseStamped()
-            pose.header = path_msg.header
-            pose.pose.position.x = float(i)
-            pose.pose.position.y = 0.0
-            pose.pose.orientation.w = 1.0
-            path_msg.poses.append(pose)
+        # Estado del robot 
+        self.sx = self.get_parameter('x0').value
+        self.sy = self.get_parameter('y0').value
+        self.stheta = self.get_parameter('theta0').value
 
-        self.publisher_.publish(path_msg)
-        self.get_logger().info('Publishing path')
+        # Entrada del robot 
+        self.v = 0.0 # velocidad lineal
+        self.w = 0.0 # velocidad angular
+
+        # Subscripciones
+        self.create_subscription(Twist, '/cmd_vel', self.cmd_vel_callback, 10)
+        self.pose_pub = self.create_publisher(PoseStamped, 'pose_sim', 10)
+        self.wr_pub = self.create_publisher(Float32, 'wr', 10)
+        self.wl_pub = self.create_publisher(Float32, 'wl', 10) 
+
+        # Timer
+        self.create_timer(self.dt, self.timer_callback)
+        self.get_logger().info(f'Kinematic model listo | r={self.r} m | l={self.l} m | dt={self.dt} s')
+
+    def cmd_vel_callback(self, msg: Twist):
+        self.v = msg.linear.x
+        self.w = msg.angular.z
+    
+    def timer_callback(self):
+        # velocidad de cada rueda
+        wr = (self.v + self.w * self.l / 2.0) / self.r
+        wl = (self.v - self.w * self.l / 2.0) / self.r
+
+        # Integracion de euler
+        self.sx += self.v * math.cos(self.stheta) * self.dt
+        self.sy += self.v * math.sin(self.stheta) * self.dt
+        self.stheta += self.w * self.dt
+
+        # Normalizar angulo
+        self.stheta = math.atan2(math.sin(self.stheta), math.cos(self.stheta))  
+
+        #  Cuaternion 
+        qz = math.sin(self.stheta / 2)
+        qw = math.cos(self.stheta / 2)
+
+        # Publicar pose 
+        pose_msg = PoseStamped()        
+        pose_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_msg.header.frame_id = 'odom'
+        pose_msg.pose.position.x = self.sx
+        pose_msg.pose.position.y = self.sy
+        pose_msg.pose.position.z = 0.0
+        pose_msg.pose.orientation.x = 0.0
+        pose_msg.pose.orientation.y = 0.0
+        pose_msg.pose.orientation.z = qz
+        pose_msg.pose.orientation.w = qw
+        self.pose_pub.publish(pose_msg) 
+
+        # Publicar velocidades con ruido gaussiano: ω = ω + N(0, k·|ω|)
+        wr_msg = Float32()
+        wl_msg = Float32()
+        wr_msg.data = wr + np.random.normal(0, self.k_r * abs(wr))
+        wl_msg.data = wl + np.random.normal(0, self.k_l * abs(wl))
+        self.wr_pub.publish(wr_msg)
+        self.wl_pub.publish(wl_msg)
+
+        # Log
+        #self.get_logger().info(f'Pose: ({self.sx:.2f}, {self.sy:.2f}, {self.stheta:.2f}) | V={self.v:.2f} m/s | W={self.w:.2f} rad/s')        
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PathPublisher()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    node = PuzzleBotKinematic()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
+        
