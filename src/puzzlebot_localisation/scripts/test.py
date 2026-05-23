@@ -10,7 +10,7 @@ import numpy as np
 class PuzzleBotKinematic(Node):
     def __init__(self):
         super().__init__('puzzlebot_kinematic')
-
+    
         # Parametros configurables dede launch
         self.declare_parameter('wheel_radius', 0.05) # r [meters]
         self.declare_parameter('wheel_base', 0.19) # l [meters]

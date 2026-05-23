@@ -2,26 +2,34 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration, Command
+from launch.conditions import IfCondition
 from launch_ros.actions import Node
+
 ARGUMENTS=[
     DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true','false'],description='use simulation time'),
     DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz'),
-    DeclareLaunchArgument('robot_description', default_value='')
+    DeclareLaunchArgument('namespace',default_value='/'), 
+    DeclareLaunchArgument('real', default_value='true',choices=['true','false'])
 ]
 
 #Remapping for real puzzlebot
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     use_rviz = LaunchConfiguration('use_rviz')
-    robot_description = LaunchConfiguration('robot_description')
+    urdf_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
+    robot_description = Command(['cat ', urdf_path])
+
+    namespace=LaunchConfiguration('namespace')
+    real=LaunchConfiguration('real')
 
     joint_states_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='both',
+        namespace=namespace,
         parameters=[
-            {'robot_description': robot_description,
+            {'robot_description': robot_description,    
              'use_sim_time': use_sim_time}
         ]
     )
@@ -30,6 +38,7 @@ def generate_launch_description():
         package='puzzlebot_description',
         executable='joint_pub',
         name='odometry_node',
+        namespace=namespace,
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}]
     )
@@ -38,8 +47,10 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='lidar_tf_bridge',
+        namespace=namespace,
         arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
-        parameters=[{'use_sim_time': use_sim_time}]
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(real)
     )
 
 

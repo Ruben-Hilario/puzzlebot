@@ -23,10 +23,11 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     namespace1=LaunchConfiguration('namespace1')
     namespace2=LaunchConfiguration('namespace2')
+    use_sim = LaunchConfiguration('use_sim')
 
     urdf_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
     rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/dual.rviz'
-    robot_description = Command(['cat ', urdf_path])
+    
 
     robot_params = {
         'wheel_radius':  0.05,
@@ -35,15 +36,6 @@ def generate_launch_description():
         'k_r': 0.1592,
         'k_l': 0.2128,
     }
-
-    tf_bridge = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/tf.launch.py']),
-        launch_arguments={
-            'use_sim_time':use_sim_time,
-            'use_rviz':use_rviz,
-            'robot_description':robot_description,
-        }.items()
-    )
 
     static_tf_world_map = Node(
         package='tf2_ros',
@@ -64,19 +56,6 @@ def generate_launch_description():
     )
 
     # Robot 1
-    r1_robot_state_pub = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='robot_state_publisher',
-        namespace=namespace1,
-        output='screen',
-        parameters=[{
-            'use_sim_time':      use_sim_time,
-            'robot_description': robot_description,
-            'frame_prefix': namespace1,
-        }]
-    )
-
     r1_kinematic = Node(
         package='puzzlebot_localisation',
         executable='test.py',
@@ -95,30 +74,29 @@ def generate_launch_description():
         parameters=[{**robot_params, 'odom_frame': 'odom'}]
     )
 
-    r1_joint_state = Node(
-        package='puzzlebot_description',
-        executable='joint_pub',
-        name='joint_pub',
-        namespace=namespace1,
-        output='screen',
+    tf_bridge_1 = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/tf.launch.py']),
+        launch_arguments={
+            'use_sim_time':use_sim_time,
+            'use_rviz':use_rviz,
+            'namespace':namespace1,
+            'real':'false',
+        }.items()
     )
 
     # Robot 2 — Robot REAL
     # No corre kinematic simulado: los encoders vienen del hardware (Jetson)
     # El remap conecta los topics globales del robot real al namespace robot2
-    r2_robot_state_pub = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        name='robot_state_publisher',
-        namespace=namespace2,
-        output='screen',
-        parameters=[{
-            'use_sim_time':      use_sim_time,
-            'robot_description': robot_description,
-            'frame_prefix':     namespace2,
-        }]
-    )
 
+    tf_bridge_2 = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/tf.launch.py']),
+        launch_arguments={
+            'use_sim_time':use_sim_time,
+            'use_rviz':use_rviz,
+            'namespace':namespace2,
+            'real':'true'
+        }.items()
+    )
 
     r2_localisation = Node(
         package='puzzlebot_localisation',
@@ -127,15 +105,6 @@ def generate_launch_description():
         namespace=namespace2,
         output='screen',
     )
-
-    r2_joint_state = Node(
-        package='puzzlebot_description',
-        executable='joint_pub',
-        name='joint_pub',
-        namespace=namespace2,
-        output='screen',
-    )
-
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -146,15 +115,12 @@ def generate_launch_description():
 
     return LaunchDescription([
         *ARGUMENTS,
-        static_tf_world_map,
-        static_tf_map_odom,
-        tf_bridge,
-        r1_robot_state_pub,
+        # static_tf_world_map,
+        # static_tf_map_odom,
+        tf_bridge_1,
         r1_kinematic,
         r1_localisation,
-        r1_joint_state,
-        r2_robot_state_pub,
         r2_localisation,
-        r2_joint_state,
+        tf_bridge_2,
         rviz_node,
     ])
