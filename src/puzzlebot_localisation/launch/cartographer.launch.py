@@ -65,19 +65,20 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
                 
-    # occupancy_grid_node = IncludeLaunchDescription(
-        # PythonLaunchDescriptionSource([ThisLaunchFileDir(), 'occupancy_grid.launch.py']),
-        # launch_arguments={
-            # 'use_sim_time':use_sim_time,
-            # 'resolution':resolution,
-            # 'publish_period_sec':publish_period_sec
-        # }.items()
-    # )
+    occupancy_grid_bridge = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([ThisLaunchFileDir(), 'occupancy_grid.launch.py']),
+        launch_arguments={
+            'use_sim_time':use_sim_time,
+            'resolution':resolution,
+            'publish_period_sec':publish_period_sec,
+            'use_rviz':use_rviz
+        }.items()
+    )
     
     return LaunchDescription([
         *ARGUMENTS, 
         localisation_node,
         cartographer_node, 
-        occupancy_grid_node
-        #rviz_node,        
+        occupancy_grid_node,
+        occupancy_grid_bridge,
     ])
