@@ -9,7 +9,8 @@ import math
 class PuzzleBotOdom(Node):
     def __init__(self):
         super().__init__('odometry_node')
-        self.namespace = self.get_namespace()
+        ns = self.get_namespace().strip('/')
+        self.frame_prefix = ns + '/' if ns else ''
         # Parámetros físicos (igual que tu URDF/plugin)
         self.R = 0.05    # wheel_radius
         self.L = 0.18    # robot_width
@@ -37,7 +38,8 @@ class PuzzleBotOdom(Node):
         self.tf_br = TransformBroadcaster(self)
 
         # Publisher de joint_states (para robot_state_publisher)
-        self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
+        # Relative topic (no leading '/') so it respects the node's namespace
+        self.joint_pub = self.create_publisher(JointState, 'joint_states', 10)
 
         self.create_timer(0.001, self.update)  # 100 Hz
 
@@ -83,7 +85,7 @@ class PuzzleBotOdom(Node):
         tf = TransformStamped()
         tf.header.stamp    = current_time
         tf.header.frame_id = 'odom'
-        tf.child_frame_id  = 'base_link'
+        tf.child_frame_id  = self.frame_prefix + 'base_link'
         tf.transform.translation.x = self.x
         tf.transform.translation.y = self.y
         tf.transform.translation.z = 0.0

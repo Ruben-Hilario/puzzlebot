@@ -29,8 +29,9 @@ def generate_launch_description():
         output='both',
         namespace=namespace,
         parameters=[
-            {'robot_description': robot_description,    
-             'use_sim_time': use_sim_time}
+            {'robot_description': robot_description,
+             'use_sim_time': use_sim_time,
+             'frame_prefix': [namespace, '/']}
         ]
     )
     
@@ -48,7 +49,9 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='lidar_tf_bridge',
         namespace=namespace,
-        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
+        arguments=['0', '0', '0', '0', '0', '0',
+                   [namespace, '/lidar_link'],
+                   'puzzlebot/chassis/rplidar'],
         parameters=[{'use_sim_time': use_sim_time}],
         condition=IfCondition(real)
     )

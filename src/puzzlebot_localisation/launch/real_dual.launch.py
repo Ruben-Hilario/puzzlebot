@@ -116,7 +116,7 @@ def generate_launch_description():
     return LaunchDescription([
         *ARGUMENTS,
         # static_tf_world_map,
-        # static_tf_map_odom,
+        static_tf_map_odom,
         tf_bridge_1,
         r1_kinematic,
         r1_localisation,
