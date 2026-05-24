@@ -71,7 +71,11 @@ def generate_launch_description():
         name='odom_node',
         namespace=namespace1,
         output='screen',
-        parameters=[{**robot_params, 'odom_frame': 'odom'}]
+        parameters=[{**robot_params, 'odom_frame': 'odom'}],
+        remappings=[
+            ('VelocityEncR', 'wr'),
+            ('VelocityEncL', 'wl'),
+        ]
     )
 
     tf_bridge_1 = IncludeLaunchDescription(
@@ -104,6 +108,10 @@ def generate_launch_description():
         name='odom_node',
         namespace=namespace2,
         output='screen',
+        remappings=[
+            ('VelocityEncR', '/VelocityEncR'),
+            ('VelocityEncL', '/VelocityEncL'),
+        ]
     )
     rviz_node = Node(
         package='rviz2',

@@ -43,10 +43,12 @@ PuzzlebotLocalisation::~PuzzlebotLocalisation() {}
 
 void PuzzlebotLocalisation::encR_callback(const std_msgs::msg::Float32::SharedPtr msg) {
     wr_val_ = msg->data;
+    //RCLCPP_INFO(this->get_logger(), "Received wr: %.3f", wr_val_);
 }
 
 void PuzzlebotLocalisation::encL_callback(const std_msgs::msg::Float32::SharedPtr msg) {
     wl_val_ = msg->data;
+    //RCLCPP_INFO(this->get_logger(), "Received wr: %.3f", wl_val_);
 }
 
 void PuzzlebotLocalisation::run() {
@@ -103,7 +105,17 @@ void PuzzlebotLocalisation::publish_odometry() {
     
     odom_msg.header.stamp = this->get_clock()->now();
     odom_msg.header.frame_id = "odom";
-    odom_msg.child_frame_id = "base_link";
+    // Build child_frame_id using the node namespace to match joint_pub.py behaviour
+    // Remove leading '/' from namespace if present, and use '<ns>/base_link' or 'base_link' when ns is empty
+    std::string ns = namespace_;
+    if (!ns.empty() && ns.front() == '/') {
+        ns = ns.substr(1);
+    }
+    if (ns.empty()) {
+        odom_msg.child_frame_id = "base_link";
+    } else {
+        odom_msg.child_frame_id = ns + "/base_link";
+    }
 
     //Position
     odom_msg.pose.pose.position.x = X_;
@@ -114,7 +126,7 @@ void PuzzlebotLocalisation::publish_odometry() {
     tf2::Quaternion q;
     q.setRPY(0, 0, Th_);
     odom_msg.pose.pose.orientation = tf2::toMsg(q);
-
+    
 	// Map 3x3 Eigen Sigma_ matrix into the 6x6 ROS 2 row-major array
     // Indices for 6x6 array: x=0, y=7, yaw=35
     odom_msg.pose.covariance.fill(0.0); 
@@ -133,7 +145,7 @@ void PuzzlebotLocalisation::publish_odometry() {
     odom_msg.twist.twist.angular.z = Omega_;  
 
     odom_pub_->publish(odom_msg);
-    //RCLCPP_INFO(this->get_logger(), "Published Odometry: X=%.3f, Y=%.3f, Th=%.3f", X_, Y_, Th_);
+    // RCLCPP_INFO(this->get_logger(), "Published Odometry: X=%.3f, Y=%.3f, Th=%.3f", X_, Y_, Th_);
 }
 
 void PuzzlebotLocalisation::uncertainty(double dt){
