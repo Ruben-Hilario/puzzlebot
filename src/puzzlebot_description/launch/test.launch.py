@@ -115,13 +115,13 @@ def generate_launch_description():
         )]
     )
 
-    lidar_tf_bridge_node = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='lidar_tf_bridge',
-        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
+    # lidar_tf_bridge_node = Node(
+    #     package='tf2_ros',
+    #     executable='static_transform_publisher',
+    #     name='lidar_tf_bridge',
+    #     arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
+    #     parameters=[{'use_sim_time': use_sim_time}]
+    # )
 
     # Launch Ignition Gazebo
     ignition_gazebo = IncludeLaunchDescription(

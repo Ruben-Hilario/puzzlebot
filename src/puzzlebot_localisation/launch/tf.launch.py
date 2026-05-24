@@ -50,15 +50,28 @@ def generate_launch_description():
         name='lidar_tf_bridge',
         namespace=namespace,
         arguments=['0', '0', '0', '0', '0', '0',
-                   [namespace, '/lidar_link'],
+                   ['/robot_real/lidar_link'],
                    'puzzlebot/chassis/rplidar'],
-        parameters=[{'use_sim_time': use_sim_time}],
+        parameters=[{'use_sim_time': 'true'}],
         condition=IfCondition(real)
     )
 
+    # lidar_tf_bridge_node = Node(
+    #     package='tf2_ros',
+    #     executable='static_transform_publisher',
+    #     name='lidar_tf_bridge',
+    #     arguments=[
+    #         '0', '0', '0', '0', '0', '0',
+    #         [namespace,'/lidar_link'],
+    #         'puzzlebot/chassis/rplidar',
+    #         '--ros-args', '-p', 'use_sim_time:=', 'true' # Pass it as a ROS argument
+    #     ],
+    #     parameters=[{'use_sim_time': 'true'}],
+    #     condition=IfCondition(real)
+    # )
 
     return LaunchDescription([
-    joint_states_node,
-    odom_node,
-    lidar_tf_bridge_node,
+        joint_states_node,
+        odom_node,
+        lidar_tf_bridge_node,
     ])
