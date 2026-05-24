@@ -2,7 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration, Command
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch_ros.actions import Node
 
 ARGUMENTS=[
@@ -44,34 +44,37 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    lidar_tf_bridge_node = Node(
+    # Real robot: lidar_link → laser (rplidar_ros driver frame)
+    lidar_tf_bridge_real = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='lidar_tf_bridge',
         namespace=namespace,
-        arguments=['0', '0', '0', '0', '0', '0',
-                   ['/robot_real/lidar_link'],
-                   'puzzlebot/chassis/rplidar'],
-        parameters=[{'use_sim_time': 'true'}],
+        arguments=['--x', '0', '--y', '0', '--z', '0',
+                   '--roll', '0', '--pitch', '0', '--yaw', '0',
+                   '--frame-id', [namespace, '/lidar_link'],
+                   '--child-frame-id', 'laser'],
+        parameters=[{'use_sim_time': use_sim_time}],
         condition=IfCondition(real)
     )
 
-    # lidar_tf_bridge_node = Node(
-    #     package='tf2_ros',
-    #     executable='static_transform_publisher',
-    #     name='lidar_tf_bridge',
-    #     arguments=[
-    #         '0', '0', '0', '0', '0', '0',
-    #         [namespace,'/lidar_link'],
-    #         'puzzlebot/chassis/rplidar',
-    #         '--ros-args', '-p', 'use_sim_time:=', 'true' # Pass it as a ROS argument
-    #     ],
-    #     parameters=[{'use_sim_time': 'true'}],
-    #     condition=IfCondition(real)
-    # )
+    # Simulation: lidar_link → puzzlebot/chassis/rplidar (Gazebo sensor frame)
+    lidar_tf_bridge_sim = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_tf_bridge',
+        namespace=namespace,
+        arguments=['--x', '0', '--y', '0', '--z', '0',
+                   '--roll', '0', '--pitch', '0', '--yaw', '0',
+                   '--frame-id', [namespace, '/lidar_link'],
+                   '--child-frame-id', 'puzzlebot/chassis/rplidar'],
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=UnlessCondition(real)
+    )
 
     return LaunchDescription([
         joint_states_node,
         odom_node,
-        lidar_tf_bridge_node,
+        lidar_tf_bridge_real,
+        lidar_tf_bridge_sim,
     ])
