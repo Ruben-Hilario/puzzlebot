@@ -230,6 +230,8 @@ class MonteCarloSLAM(Node):
         cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
         return np.arctan2(siny_cosp, cosy_cosp)
 
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = MonteCarloSLAM()

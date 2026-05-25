@@ -3,11 +3,12 @@ from launch.actions import DeclareLaunchArgument
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
+
 ARGUMENTS=[
     DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true','false'],description='use simulation time'),
     DeclareLaunchArgument('publish_period_sec', default_value='0.1', description='Occupancy grid publishing period'),
     DeclareLaunchArgument('resolution', default_value='0.05', description='Occupancy grid resolution'),
-    DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz'),
+    DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz')
 ]
 
 def generate_launch_description():
@@ -23,9 +24,10 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d',rviz_map],
+        arguments=['-d',rviz_path],
         parameters=[{'use_sim_time':use_sim_time}]
     )
+
 
     joint_states_node = Node(
         package='robot_state_publisher',
@@ -46,6 +48,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+    
     lidar_tf_bridge_node = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -54,10 +57,9 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-
     return LaunchDescription([
-    joint_states_node,
-    odom_node,
-    lidar_tf_bridge_node,
-    rviz_node,
+        joint_states_node,
+        odom_node,
+        lidar_tf_bridge_node,
+        rviz_node,
     ])
