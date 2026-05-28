@@ -410,7 +410,7 @@ MCL::MCL() : Node("mixture_mcl_node") {
 
     pose_pub_  = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("mcl_pose", 10);
     cloud_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("particle_cloud", 10);
-    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
     // 10Hz Heartbeat timer to maintain the Map->Odom transform
     tf_timer_ = this->create_wall_timer(std::chrono::milliseconds(100), std::bind(&MCL::tfHeartbeat, this));
@@ -422,7 +422,7 @@ MCL::MCL() : Node("mixture_mcl_node") {
 void MCL::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     map_res_    = msg->info.resolution;
     map_width_  = msg->info.width;
-    map_height_ = msg->info.height;
+    map_height_ = msg->info.height;A
     map_origin_ = {msg->info.origin.position.x, msg->info.origin.position.y};
 
     // Calculate Map Yaw
@@ -812,19 +812,26 @@ void MCL::publishTransformsAndClouds(const rclcpp::Time& stamp) {
     // Broadcast map -> odom transformation
     geometry_msgs::msg::TransformStamped tf;
     tf.header.stamp = stamp;
-    tf.header.frame_id = "map";
-    tf.child_frame_id = "odom";
-    tf.transform.translation.x = wx - (ox * std::cos(dth) - oy * std::sin(dth));
-    tf.transform.translation.y = wy - (ox * std::sin(dth) + oy * std::cos(dth));
+    tf.header.frame_id = "odom";
+    tf.child_frame_id = "map";
+
+    // Simple, robust transform: translation is difference between estimated map pose and
+    // the latest odometry pose; rotation is the yaw difference.
+    tf.transform.translation.x = wx - ox;
+    tf.transform.translation.y = wy - oy;
     tf.transform.translation.z = 0.0;
-    tf.transform.rotation.z = std::sin(dth / 2.0);
-    tf.transform.rotation.w = std::cos(dth / 2.0);
+    tf2::Quaternion tq;
+    tq.setRPY(0.0, 0.0, dth);
+    tf.transform.rotation.x = tq.x();
+    tf.transform.rotation.y = tq.y();
+    tf.transform.rotation.z = tq.z();
+    tf.transform.rotation.w = tq.w();
     tf_broadcaster_->sendTransform(tf);
 
     // Publish current PoseWithCovarianceStamped
     geometry_msgs::msg::PoseWithCovarianceStamped pm;
     pm.header.stamp = stamp;
-    pm.header.frame_id = "map";
+    pm.header.frame_id = "odom";
     pm.pose.pose.position.x = wx;
     pm.pose.pose.position.y = wy;
     pm.pose.pose.orientation.z = std::sin(wth / 2.0);
@@ -839,7 +846,7 @@ void MCL::publishTransformsAndClouds(const rclcpp::Time& stamp) {
     // Publish complete particle cluster cloud
     geometry_msgs::msg::PoseArray pa;
     pa.header.stamp = stamp;
-    pa.header.frame_id = "map";
+    pa.header.frame_id = "odom";
     for (const auto& p : particles_) {
         geometry_msgs::msg::Pose pose;
         pose.position.x = p.x;

@@ -28,7 +28,7 @@ def generate_launch_description():
         name='map_publisher',
         output='screen',
     )
-
+  
     #Dead reckoning
     localisation_node = Node(
         package='puzzlebot_localisation',
@@ -66,6 +66,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         *ARGUMENTS,
+        map_node,
         localisation_node,
         mcl_node,
         tf_bridge,

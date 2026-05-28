@@ -406,7 +406,7 @@ Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
             auto map = load_map_from_file(yaml_path);
             // auto map = create_simple_map(5,10,10);
             map_pub_->publish(map);
-            RCLCPP_INFO(this->get_logger(), "Map published successfully.");
+            //RCLCPP_INFO(this->get_logger(), "Map published successfully.");
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Failed to load map: %s", e.what());
         }
@@ -441,7 +441,8 @@ nav_msgs::msg::OccupancyGrid Utils::create_simple_map(double resolution, int wid
 
 nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_path) {
     nav_msgs::msg::OccupancyGrid map;
-    map.header.frame_id = "map";
+    map.header.frame_id = "odom";
+    
     
     // Parse YAML file
     std::ifstream yaml_file(yaml_path);
