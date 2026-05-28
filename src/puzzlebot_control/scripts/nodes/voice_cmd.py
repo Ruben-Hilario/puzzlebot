@@ -32,6 +32,7 @@ class VoiceCmdNode(Node):
         self.alpha = 0.95
         self.codebooks = {}
         self.hmms = {}
+        self.voice_pub = self.create_publisher(String, '/voice_cmd', 10)
         self.get_logger().info(f"Dataset loaded with {len(self.data)} words.")
         self.timer = self.create_timer(1.0, self.timer_callback)
            
@@ -153,6 +154,7 @@ class HMMTrainingNode_MFCC(Node):
         self.global_centroids = None
         self.hmms = {}
         self.get_logger().info(f"Dataset loaded with {len(self.data)} words.")
+        self.voice_pub = self.create_publisher(String, '/voice_cmd', 10)
         self.timer = self.create_timer(1.0, self.timer_callback)
            
     def timer_callback(self):
@@ -262,6 +264,7 @@ class HMMTrainingNode_MFCC(Node):
                     'avg_confidence': np.mean(word_confs),
                     'samples': len(word_scores)
                 }
+            #self.voice_pub.publish("Evaluating word: "%s" % String(word))
 
         cm = confusion_matrix(true_labels, predictions, labels=list(self.data.keys()))
         self.get_logger().info(f"Accuracy: {np.trace(cm)/np.sum(cm):.2f}")
