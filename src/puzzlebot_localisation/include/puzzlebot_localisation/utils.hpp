@@ -129,7 +129,7 @@ public:
     Utils(const std::string& yaml_path);
     ~Utils() = default;
     nav_msgs::msg::OccupancyGrid create_simple_map(double resolution, int width, int height);
-    nav_msgs::msg::OccupancyGrid load_map_from_file(/*const std::string& yaml_path*/);
+    nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path);
     std::string yaml_path;
     rclcpp::TimerBase::SharedPtr timer_;
 };

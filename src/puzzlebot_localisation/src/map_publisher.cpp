@@ -2,7 +2,7 @@
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-    const std::string& path = "/home/ros2_ws/src/puzzlebot_localisation/media/montecarlo_map.yaml";
+    const std::string& path = "/home/ros2_ws/maps/cartographer_real.yaml";
     auto node = std::make_shared<puzzlebot_localisation::Utils>(path);
     rclcpp::spin(node);
     rclcpp::shutdown();

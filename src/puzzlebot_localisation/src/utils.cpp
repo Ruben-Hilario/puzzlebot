@@ -403,8 +403,8 @@ Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map", 10);
     timer_ = this->create_wall_timer(std::chrono::seconds(1), [this, map_pub_]() {
         try {
-            //auto map = load_map_from_file();
-            auto map = create_simple_map(5,10,10);
+            auto map = load_map_from_file(yaml_path);
+            // auto map = create_simple_map(5,10,10);
             map_pub_->publish(map);
             RCLCPP_INFO(this->get_logger(), "Map published successfully.");
         } catch (const std::exception& e) {
@@ -439,7 +439,7 @@ nav_msgs::msg::OccupancyGrid Utils::create_simple_map(double resolution, int wid
 }
 
 
-nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(/*const std::string& yaml_path*/) {
+nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_path) {
     nav_msgs::msg::OccupancyGrid map;
     map.header.frame_id = "map";
     
@@ -451,11 +451,11 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(/*const std::string& yaml
     
     std::string line;
     std::string image_path;
-    double resolution = 0.0;
+    double resolution = 0.01;
     std::vector<double> origin(3, 0.0);
     int negate = 0;
     double occupied_thresh = 0.65;
-    double free_thresh = 0.196;
+    double free_thresh = 0.25;
     
     while (std::getline(yaml_file, line)) {
         std::istringstream iss(line);
@@ -530,8 +530,8 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(/*const std::string& yaml
     
     map.data.resize(width * height);
     for (size_t i = 0; i < pgm_data.size(); ++i) {
-        double prob = static_cast<double>(pgm_data[i]) / max_val; // use this for the one done with gazebo
-        // double prob = 1.0 - (static_cast<double>(pgm_data[i]) / max_val); 
+        // double prob = static_cast<double>(pgm_data[i]) / max_val; // use this for the one done with gazebo
+        double prob = 1.0 - (static_cast<double>(pgm_data[i]) / max_val); 
         if (negate) prob = 1.0 - prob;
 
         if (prob > occupied_thresh) {

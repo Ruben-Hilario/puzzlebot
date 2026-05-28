@@ -11,8 +11,8 @@ from launch.substitutions.path_join_substitution import PathJoinSubstitution
 ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='true'  , choices=['true', 'false'], description='Use sim time'),
     DeclareLaunchArgument('robot_name', default_value='puzzlebot', description='Ignition model name'),
-    DeclareLaunchArgument('world', default_value='world1', description='World name'),
-]
+    DeclareLaunchArgument('world', default_value='track_world', description='World name'),
+    ]
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -23,7 +23,9 @@ def generate_launch_description():
     pkg_ros_ign_gazebo = get_package_share_directory('ros_gz_sim')
     gazebo_path = get_package_share_directory('puzzlebot_description') + '/models/' #"/home/testeo/src/puzzlebot_description/models/"
     robot_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
-    rviz_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.rviz'
+    rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/puzzlebot.rviz'
+    rviz_map = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
+
     robot_description = Command(['cat ', robot_path])
 
     # Environment Variables
@@ -31,13 +33,13 @@ def generate_launch_description():
         name='GZ_SIM_RESOURCE_PATH',
         value=[os.path.join(pkg_gazebo, 'models') + ':' + gazebo_path + ':' + '$GZ_SIM_RESOURCE_PATH']
     )
-    
+
     ign_gui_plugin_path = SetEnvironmentVariable(
         name='GZ_SIM_SYSTEM_PLUGIN_PATH',
         value=[os.path.join(pkg_gazebo, 'models/plugins') + ':' + '$GZ_SIM_SYSTEM_PLUGIN_PATH']
     )
 
-    ign_gazebo  _launch = PathJoinSubstitution([pkg_ros_ign_gazebo, 'launch', 'gz_sim.launch.py'])
+    ign_gazebo_launch = PathJoinSubstitution([pkg_ros_ign_gazebo, 'launch', 'gz_sim.launch.py'])
 
     # Bridge for cmd_vel and encoders
     bridge = Node(
@@ -49,7 +51,8 @@ def generate_launch_description():
             '/VelocityEncR@std_msgs/msg/Float32[gz.msgs.Float',
             '/VelocityEncL@std_msgs/msg/Float32[gz.msgs.Float'
         ],
-        output='screen'
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
     )
 
     # Clock Bridge
@@ -61,27 +64,7 @@ def generate_launch_description():
         arguments=['/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock']
     )
 
-    # # Camera Sensor Bridge
-    # camera_bridge = Node(
-    #     package='ros_gz_bridge',
-    #     executable='parameter_bridge',
-    #     name='camera_bridge',
-    #     output='screen',
-    #     parameters=[{'use_sim_time': use_sim_time}],
-    #     arguments=[
-    #         [LaunchConfiguration('world'), '/model/', LaunchConfiguration('robot_name'),
-    #          '/link/chassis/sensor/camera/image@sensor_msgs/msg/Image[ignition.msgs.Image'],
-    #         [LaunchConfiguration('world'), '/model/', LaunchConfiguration('robot_name'),
-    #          '/link/chassis/sensor/camera/camera_info@sensor_msgs/msg/CameraInfo[ignition.msgs.CameraInfo'],
-    #     ],
-    #     remappings=[
-    #         ([LaunchConfiguration('world'), '/model/', LaunchConfiguration('robot_name'),
-    #           '/link/chassis/sensor/camera/image'], '/video_source/raw'),
-    #         ([LaunchConfiguration('world'), '/model/', LaunchConfiguration('robot_name'),
-    #           '/link/chassis/sensor/camera/camera_info'], '/camera_info')
-    #     ]
-    # )
-        # Camera sensor bridge
+    # Camera sensor bridge
     camera_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -111,7 +94,15 @@ def generate_launch_description():
             ['/world/', world,'/model/', robot_name,'/link/chassis/sensor/rplidar/scan'],'scan'
         )]
     )
-    
+
+    lidar_tf_bridge_node = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_tf_bridge',
+        arguments=['0', '0', '0', '0', '0', '0', 'lidar_link', 'puzzlebot/chassis/rplidar'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Launch Ignition Gazebo
     ignition_gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ign_gazebo_launch]),
@@ -125,11 +116,28 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d',rviz_path],
+        arguments=['-d',rviz_map],
         parameters=[{'use_sim_time':use_sim_time}]
     )
 
-    
+    joint_states_node = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='both',
+        parameters=[
+            {'robot_description': robot_description,
+             'use_sim_time': use_sim_time}
+        ]
+    )
+
+    odom_node = Node(
+        package='puzzlebot_description',
+        executable='joint_pub',
+        name='odometry_node',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
 
     return LaunchDescription([
         *ARGUMENTS,
@@ -139,6 +147,9 @@ def generate_launch_description():
         clock_bridge,
         bridge,
         camera_bridge,
-        #lidar_bridge, 
+        lidar_bridge,
+        lidar_tf_bridge_node,
+        joint_states_node,
         # rviz_node,
+        odom_node,
     ])

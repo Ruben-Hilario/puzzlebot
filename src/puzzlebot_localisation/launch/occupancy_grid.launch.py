@@ -17,7 +17,10 @@ def generate_launch_description():
     publish_period_sec = LaunchConfiguration('publish_period_sec', default='1.0')
     use_rviz = LaunchConfiguration('use_rviz', default='true')
 
+    urdf_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
     rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/map.rviz'
+    robot_description = Command(['cat ', urdf_path])
+
     
     rviz_node = Node(
         package='rviz2',

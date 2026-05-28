@@ -1,4 +1,4 @@
-image: map_1779562705.pgm
+image: cartographer_real.pgm
 mode: trinary
 resolution: 0.01
 origin: [-1.07, -4.89, 0]

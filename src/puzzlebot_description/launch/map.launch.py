@@ -151,16 +151,6 @@ def generate_launch_description():
         ]
     )
 
-    # joint_states_bridge = Node(
-    #     package='ros_gz_bridge',
-    #     executable='parameter_bridge',
-    #     name='joint_states_bridge',
-    #     output='screen',
-    #     parameters=[{'use_sim_time': use_sim_time}],
-    #     arguments=[
-    #         '/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model'  # ← gz.msgs.Model
-    #     ]
-    # )
 
     odom_node = Node(
         package='puzzlebot_description',

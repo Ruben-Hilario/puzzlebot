@@ -334,7 +334,7 @@ void MCLCustomSLAM::saveMap() {
     yaml_f << "origin: [" << map_origin_x_ << ", " << map_origin_y_ << ", 0.0, 0.0, 0.0, 0.0]\n";
     yaml_f << "negate: 0\n";
     yaml_f << "occupied_thresh: 0.65\n";
-    yaml_f << "free_thresh: 0.196\n"; c
+    yaml_f << "free_thresh: 0.196\n";
 
     yaml_f.close();
     RCLCPP_INFO(this->get_logger(), "Map saved successfully to %s and %s", pgm_filename.c_str(), yaml_filename.c_str());
