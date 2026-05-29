@@ -141,57 +141,7 @@ private:
     double distance_since_resample = 0.0;
     double angle_since_resample = 0.0;
     const double RESAMPLE_DIST_THRESHOLD = 0.15; // 15 cm
-    const double RESAMPLE_ANG_THRESHOLD = 0.2;  // ~11 degrees
-};
-
-
-class MCL : public rclcpp::Node {
-public:
-    MCL();
-    ~MCL() = default;
-private:
-    // ROS 2 Communication
-    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particle_pub_;
-    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr grid_pub_;
-
-    // Callbacks
-    void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
-    void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
-
-    // MCL Core Logic
-    void initializeParticles();
-    void motionUpdate(double dx, double dy, double dtheta);
-    void sensorUpdate(const sensor_msgs::msg::LaserScan::SharedPtr scan);
-    void resample();
-    void publishVisuals();
-
-    // Map Utilities
-    void loadMapImage(std::string path);
-    bool isWall(double x, double y);
-    cv::Point worldToPixel(double wx, double wy);
-    void publishMapToOdomTransform(const rclcpp::Time& stamp);
-
-
-    // Member Variables
-    cv::Mat map_img_;
-    nav_msgs::msg::OccupancyGrid base_grid_;
-    std::vector<Particle> particles_;
-    int num_particles_ = 1500;
-
-    
-    double last_x_, last_y_, last_theta_;
-    bool initialized_ = false;
-    std::default_random_engine gen_;
-    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-    Particle odom_pose_ = {0.0, 0.0, 0.0, 0.0};
-    Particle estimated_pose_ = {0.0, 0.0, 0.0, 0.0};
-    
-    double resolution_ = 0.01;
-    double origin_x_ = -0.71;
-    double origin_y_ = -3.86;
-
+    const double RESAMPLE_ANG_THRESHOLD = 0.1;  // ~11 degrees
 };
 
 
