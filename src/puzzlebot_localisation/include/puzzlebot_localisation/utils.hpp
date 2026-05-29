@@ -73,10 +73,12 @@ private:
 
     void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void publish_path();
+    void publish_map_with_route();
 
     nav_msgs::msg::OccupancyGrid::ConstPtr current_map_;
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_route_pub_;
     std::vector<std::pair<int,int>> path;
     bool initial_path_ = false;
 
@@ -95,6 +97,7 @@ public:
 private:
     void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void publish_path();
+    void publish_map_with_route();
 
     // D* Lite Core Functions
     std::pair<double, double> calculate_key(int x, int y);
@@ -106,6 +109,7 @@ private:
     // ROS2 Utilities
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_route_pub_;
 
     // Map Data
     nav_msgs::msg::OccupancyGrid::SharedPtr current_map_;

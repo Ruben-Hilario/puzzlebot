@@ -8,8 +8,7 @@ from launch_ros.actions import Node
 ARGUMENTS=[
     DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true','false'],description='use simulation time'),
     DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz'),
-    DeclareLaunchArgument('namespace',default_value='/'), 
-    DeclareLaunchArgument('real', default_value='true',choices=['true','false'])
+    DeclareLaunchArgument('use_real', default_value='true',choices=['true','false'])
 ]
 
 #Remapping for real puzzlebot
@@ -19,19 +18,16 @@ def generate_launch_description():
     urdf_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
     robot_description = Command(['cat ', urdf_path])
 
-    namespace=LaunchConfiguration('namespace')
-    real=LaunchConfiguration('real')
+    use_real=LaunchConfiguration('use_real')
 
     joint_states_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='both',
-        namespace=namespace,
         parameters=[
             {'robot_description': robot_description,
-             'use_sim_time': use_sim_time,
-             'frame_prefix': [namespace, '/']}
+             'use_sim_time': use_sim_time,}
         ]
     )
     
@@ -39,7 +35,6 @@ def generate_launch_description():
         package='puzzlebot_description',
         executable='joint_pub',
         name='odometry_node',
-        namespace=namespace,
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}]
     )
@@ -49,13 +44,12 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='lidar_tf_bridge',
-        namespace=namespace,
         arguments=['--x', '0', '--y', '0', '--z', '0',
                    '--roll', '0', '--pitch', '0', '--yaw', '0',
-                   '--frame-id', [namespace, '/lidar_link'],
+                   '--frame-id', ['lidar_link'],
                    '--child-frame-id', 'laser'],
         parameters=[{'use_sim_time': use_sim_time}],
-        condition=IfCondition(real)
+        condition=IfCondition(use_real)
     )
 
     # Simulation: lidar_link → puzzlebot/chassis/rplidar (Gazebo sensor frame)
@@ -63,13 +57,12 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='lidar_tf_bridge',
-        namespace=namespace,
         arguments=['--x', '0', '--y', '0', '--z', '0',
                    '--roll', '0', '--pitch', '0', '--yaw', '0',
-                   '--frame-id', [namespace, '/lidar_link'],
+                   '--frame-id', ['lidar_link'],
                    '--child-frame-id', 'puzzlebot/chassis/rplidar'],
         parameters=[{'use_sim_time': use_sim_time}],
-        condition=UnlessCondition(real)
+        condition=UnlessCondition(use_real)
     )
 
     return LaunchDescription([

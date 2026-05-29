@@ -322,7 +322,7 @@ AMCL::AMCL() : Node("mcl_localization_node") {
     auto qos = rclcpp::SensorDataQoS();
 
     // Declare the map file path parameter
-    this->declare_parameter("map_file_path", std::string("/home/ros2_ws/maps/cartographer_gazebo.yaml"));
+    this->declare_parameter("map_file_path", std::string("/home/brad/ros2_ws/puzzlebot/custom_slam_output_map.yaml"));
     std::string map_file_path = this->get_parameter("map_file_path").as_string();
 
     // Subscriptions

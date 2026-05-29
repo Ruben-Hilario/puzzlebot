@@ -38,7 +38,7 @@ def generate_launch_description():
     )
 
     tf_bridge = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/occupancy_grid.launch.py']),
+        PythonLaunchDescriptionSource([ThisLaunchFileDir(), '/tf.launch.py']),
         launch_arguments={
             'use_sim_time':use_sim_time,
             'use_rviz':use_rviz,

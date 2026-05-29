@@ -8,10 +8,12 @@ PathPlanner::PathPlanner(std::pair<int,int> start, std::pair<int,int> goal) : No
         "map", 10, std::bind(&PathPlanner::mapCb, this, std::placeholders::_1));
     
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
+    map_route_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map_route", 10);
     
     timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
         if (planning_) {
             publish_path();
+            publish_map_with_route();
         } else {
             RCLCPP_INFO(this->get_logger(), "Path not found.");
         }
@@ -112,16 +114,16 @@ std::vector<std::pair<int, int>> PathPlanner::aStar(
 void PathPlanner::publish_path(){
     // Convert vector of pairs to nav_msgs::msg::Path
     auto path_msg = nav_msgs::msg::Path();
-    path_msg.header.frame_id = "map";
+    path_msg.header.frame_id = current_map_->header.frame_id;
     path_msg.header.stamp = this->now();
     for (const auto& point : path) {
         geometry_msgs::msg::PoseStamped pose;
-        pose.header.frame_id = "map";
+        pose.header.frame_id = current_map_->header.frame_id;
         pose.header.stamp = this->now();
-        //Convert to world coordinates
-        pose.pose.position.x = (point.first * current_map_->info.resolution) + 
+        //Convert to world coordinates - CRITICAL: Add 0.5 to get cell centers, not corners
+        pose.pose.position.x = (point.first + 0.5) * current_map_->info.resolution + 
                                 current_map_->info.origin.position.x;
-        pose.pose.position.y = (point.second * current_map_->info.resolution) + 
+        pose.pose.position.y = (point.second + 0.5) * current_map_->info.resolution + 
                                 current_map_->info.origin.position.y;
         
         pose.pose.position.z = 0.0;
@@ -130,7 +132,38 @@ void PathPlanner::publish_path(){
     }
     
     path_pub_->publish(path_msg);
-    RCLCPP_INFO(this->get_logger(), "Path found");
+    RCLCPP_INFO(this->get_logger(), "Path found with %zu waypoints in frame '%s'", path_msg.poses.size(), path_msg.header.frame_id.c_str());
+}
+
+void PathPlanner::publish_map_with_route() {
+    if (!current_map_ || path.empty()) return;
+    
+    // Create a copy of the current map
+    nav_msgs::msg::OccupancyGrid marked_map = *current_map_;
+    
+    // Mark the start point with a distinct value (50 - light gray)
+    int start_idx = start.second * current_map_->info.width + start.first;
+    if (start_idx >= 0 && start_idx < (int)marked_map.data.size()) {
+        marked_map.data[start_idx] = 50;  // Light gray for start
+    }
+    
+    // Mark the goal point with another distinct value (75 - darker gray)
+    int goal_idx = goal.second * current_map_->info.width + goal.first;
+    if (goal_idx >= 0 && goal_idx < (int)marked_map.data.size()) {
+        marked_map.data[goal_idx] = 75;  // Darker gray for goal
+    }
+    
+    // Mark the path with intermediate value (60 - medium gray)
+    for (const auto& point : path) {
+        int idx = point.second * current_map_->info.width + point.first;
+        if (idx >= 0 && idx < (int)marked_map.data.size() && marked_map.data[idx] != 50 && marked_map.data[idx] != 75) {
+            marked_map.data[idx] = 60;  // Medium gray for path
+        }
+    }
+    
+    marked_map.header.stamp = this->now();
+    map_route_pub_->publish(marked_map);
+    RCLCPP_INFO(this->get_logger(), "Map with route published on /map_route");
 }
 
 
@@ -141,11 +174,13 @@ DStar::DStar(std::pair<int,int> start, std::pair<int,int> goal) : Node("dstar_no
         "map", 10, std::bind(&DStar::mapCb, this, std::placeholders::_1));
     
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
+    map_route_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map_route", 10);
     
     timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
         if (planning_) {
             RCLCPP_INFO(this->get_logger(),"Path found, maybe");
             publish_path();
+            publish_map_with_route();
         } else {
             RCLCPP_WARN(this->get_logger(), "Path not found.");
         }
@@ -354,9 +389,9 @@ void DStar::publish_path() {
         geometry_msgs::msg::PoseStamped pose;
         pose.header = path_msg.header;
         
-        // CRITICAL: Transform grid to World Coordinates
-        pose.pose.position.x = (curr_x * res) + origin_x;
-        pose.pose.position.y = (curr_y * res) + origin_y;
+        // CRITICAL: Transform grid to World Coordinates - Add 0.5 to get cell centers, not corners
+        pose.pose.position.x = (curr_x + 0.5) * res + origin_x;
+        pose.pose.position.y = (curr_y + 0.5) * res + origin_y;
         pose.pose.position.z = 0.0;
         pose.pose.orientation.w = 1.0;
         
@@ -397,6 +432,70 @@ void DStar::publish_path() {
     
     path_pub_->publish(path_msg);
     RCLCPP_INFO(this->get_logger(), "D* Path Published with %zu poses", path_msg.poses.size());
+}
+
+void DStar::publish_map_with_route() {
+    if (!current_map_) return;
+    
+    // Create a copy of the current map
+    nav_msgs::msg::OccupancyGrid marked_map = *current_map_;
+    
+    // Mark the start point with a distinct value (50 - light gray)
+    int start_idx = start.second * current_map_->info.width + start.first;
+    if (start_idx >= 0 && start_idx < (int)marked_map.data.size()) {
+        marked_map.data[start_idx] = 50;  // Light gray for start
+    }
+    
+    // Mark the goal point with another distinct value (75 - darker gray)
+    int goal_idx = goal.second * current_map_->info.width + goal.first;
+    if (goal_idx >= 0 && goal_idx < (int)marked_map.data.size()) {
+        marked_map.data[goal_idx] = 75;  // Darker gray for goal
+    }
+    
+    // Reconstruct and mark the path by following g values
+    std::vector<std::pair<int, int>> path_cells;
+    int curr_x = start.first;
+    int curr_y = start.second;
+    
+    while (curr_x != goal.first || curr_y != goal.second) {
+        path_cells.push_back({curr_x, curr_y});
+        
+        double min_val = std::numeric_limits<double>::infinity();
+        int next_x = curr_x;
+        int next_y = curr_y;
+        
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                if (dx == 0 && dy == 0) continue;
+                int nx = curr_x + dx;
+                int ny = curr_y + dy;
+                double val = get_cost(nx, ny) + g_[{nx, ny}];
+                if (val < min_val) {
+                    min_val = val;
+                    next_x = nx;
+                    next_y = ny;
+                }
+            }
+        }
+        
+        if (next_x == curr_x && next_y == curr_y) break;
+        
+        curr_x = next_x;
+        curr_y = next_y;
+        if (path_cells.size() > 2000) break;
+    }
+    
+    // Mark the path with intermediate value (60 - medium gray)
+    for (const auto& point : path_cells) {
+        int idx = point.second * current_map_->info.width + point.first;
+        if (idx >= 0 && idx < (int)marked_map.data.size() && marked_map.data[idx] != 50 && marked_map.data[idx] != 75) {
+            marked_map.data[idx] = 60;  // Medium gray for path
+        }
+    }
+    
+    marked_map.header.stamp = this->now();
+    map_route_pub_->publish(marked_map);
+    RCLCPP_INFO(this->get_logger(), "D* Map with route published on /map_route with %zu path cells", path_cells.size());
 }
 
 Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
@@ -440,7 +539,7 @@ nav_msgs::msg::OccupancyGrid Utils::create_simple_map(double resolution, int wid
 
 nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_path) {
     nav_msgs::msg::OccupancyGrid map;
-    map.header.frame_id = "odom";
+    map.header.frame_id = "map";
     
     
     // Parse YAML file
@@ -527,7 +626,7 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
     map.info.origin.position.y = 3.0;
     map.info.origin.position.z = origin[2];
     // map.info.origin.orientation.w = 1.0;
-    map.info.origin.orientation.x = 0.0;
+    map.info.origin.orientation.x = 1.0;
     map.info.origin.orientation.y = 0.0;
     map.info.origin.orientation.z = 0.0;
     map.info.origin.orientation.w = 0.0;
