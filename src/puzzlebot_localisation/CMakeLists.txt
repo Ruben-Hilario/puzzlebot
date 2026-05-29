@@ -19,6 +19,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(cv_bridge REQUIRED)
 
 add_executable(odom_node
   src/localisation_node.cpp
@@ -100,6 +101,7 @@ ament_target_dependencies(mcl_node
   sensor_msgs
   nav_msgs
   std_srvs
+  cv_bridge
 )
 
 ament_target_dependencies(route_node

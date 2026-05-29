@@ -159,6 +159,14 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}]
     )
+    
+    map_publisher = Node(
+        package='puzzlebot_localisation',
+        executable='map_publisher',
+        name='map_publisher',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
 
     return LaunchDescription([
         *ARGUMENTS,
@@ -174,4 +182,5 @@ def generate_launch_description():
         #joint_states_bridge,
         rviz_node,
         odom_node,
+        map_publisher
     ])

@@ -66,7 +66,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         *ARGUMENTS,
-        map_node,
+        # map_node,
         localisation_node,
         mcl_node,
         tf_bridge,

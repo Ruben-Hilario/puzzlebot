@@ -413,7 +413,6 @@ Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
     });
 }
 
-
 nav_msgs::msg::OccupancyGrid Utils::create_simple_map(double resolution, int width, int height) {
     nav_msgs::msg::OccupancyGrid map;
     map.header.frame_id = "map";
@@ -524,10 +523,14 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
     map.info.resolution = resolution;
     map.info.width = width;
     map.info.height = height;
-    map.info.origin.position.x = origin[0];
-    map.info.origin.position.y = origin[1];
+    map.info.origin.position.x = 4.0;
+    map.info.origin.position.y = 3.0;
     map.info.origin.position.z = origin[2];
-    map.info.origin.orientation.w = 1.0;
+    // map.info.origin.orientation.w = 1.0;
+    map.info.origin.orientation.x = 0.0;
+    map.info.origin.orientation.y = 0.0;
+    map.info.origin.orientation.z = 0.0;
+    map.info.origin.orientation.w = 0.0;
     
     map.data.resize(width * height);
     for (size_t i = 0; i < pgm_data.size(); ++i) {

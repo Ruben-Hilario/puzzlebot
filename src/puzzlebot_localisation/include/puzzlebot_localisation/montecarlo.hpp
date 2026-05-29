@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <opencv2/opencv.hpp>
 
 struct Particle {
     double x, y, theta;
@@ -73,85 +74,126 @@ private:
     const std::string filename_ = "custom_slam_output_map";
 };
 
-//MCL
-class MCL : public rclcpp::Node {
 
+class AMCL: public rclcpp::Node {
+public:
+    AMCL();
+    ~AMCL() = default;
+private:
+    // ROS2 Subscription Callbacks
+    void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+    void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+
+    // Core MCL Filtering Blocks
+    void initializeParticlesGlobal();
+    void resampleParticles();
+    void estimateRobotPose();
+    Particle optimizePoseByScanMatching(const Particle& predicted_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan);
+    void markPoseOnMap(const Particle& pose, int pixel_half_size = 15);
+
+    // Publisher & TF Helpers
+    void publishParticles(const rclcpp::Time& stamp);
+    void publishEstimatedPose(const rclcpp::Time& stamp);
+    void publishMapToOdomTransform(const rclcpp::Time& stamp);
+    
+    // Map Loading and Publishing
+    nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path);
+    void publishMap();
+    void publishMap(const nav_msgs::msg::OccupancyGrid& map);
+    void computeDistanceField();
+
+    // Map overlay helpers
+    void markPoseOnMap(nav_msgs::msg::OccupancyGrid& grid, const Particle& pose, int pixel_half_size = 15);
+
+    // ROS2 Comms Handles
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particle_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+
+    // Random engine for particle sampling
+    std::mt19937 gen_{std::random_device{}()};
+
+    // Store last received scan to allow scan-based initialization
+    sensor_msgs::msg::LaserScan::SharedPtr last_scan_;
+
+    // Filter Arrays and State Variables
+    nav_msgs::msg::OccupancyGrid map_;
+    std::vector<Particle> particles_;
+    Particle odom_pose_;
+    Particle last_odom_pose_;
+    Particle estimated_pose_;
+
+    bool odom_initialized_ = false;
+    bool map_initialized_ = false;
+    bool particles_initialized_ = false;
+    std::vector<float> dist_field_;
+    
+    // Filter Hyperparameters
+    const size_t num_particles_ = 5000; 
+    const double linear_noise_ = 0.05; 
+    const double angular_noise_ = 0.02;
+    double distance_since_resample = 0.0;
+    double angle_since_resample = 0.0;
+    const double RESAMPLE_DIST_THRESHOLD = 0.15; // 15 cm
+    const double RESAMPLE_ANG_THRESHOLD = 0.2;  // ~11 degrees
+};
+
+
+class MCL : public rclcpp::Node {
 public:
     MCL();
     ~MCL() = default;
 private:
-    // Callbacks
-    void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
-    void odomCb(const nav_msgs::msg::Odometry::SharedPtr msg);
-    void scanCb(const sensor_msgs::msg::LaserScan::SharedPtr msg);
-    void initPoseCb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
-    void tfHeartbeat();
-
-    // Internal MCL Steps
-    void globalLocalization();
-    std::vector<Particle> sampleFreeCells(int n);
-    std::vector<Particle> sampleNearEstimate(double wx, double wy, double wth, int n, double r_xy);
-    void sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan);
-    void resampleParticles();
-    
-    // Publishing & Math utilities
-    std::tuple<double, double, double> getBestEstimate();
-    void publishTransformsAndClouds(const rclcpp::Time& stamp);
-    inline double wrap(double angle) { return std::atan2(std::sin(angle), std::cos(angle)); }
-
-    // Constants for Mixture MCL
-    static constexpr double ALPHA_SLOW = 0.001;
-    static constexpr double ALPHA_FAST = 0.1;
-
-    // MCL Parameters
-    int num_particles_;
-    double alpha1_, alpha2_, alpha3_, alpha4_;
-    double sigma_hit_, z_hit_, z_rand_;
-    double laser_max_range_, laser_min_range_;
-    int beam_step_;
-    double update_min_d_, update_min_a_;
-    int resample_interval_;
-
-    // Map properties & Distance Transform Map
-    double map_res_ = 0.05;
-    int map_width_ = 0;
-    int map_height_ = 0;
-    std::pair<double, double> map_origin_ = {0.0, 0.0};
-    double map_cos_ = 1.0;
-    double map_sin_ = 0.0;
-    std::vector<double> dist_map_;               // Distance transform lookup
-    std::vector<std::pair<int, int>> free_cells_; // (row, col) coordinates of free spaces
-
-    // Filter status
-    std::vector<Particle> particles_;
-    bool initialized_ = false;
-    int scan_count_ = 0;
-    double w_slow_ = 0.0;
-    double w_fast_ = 0.0;
-    
-    // Accumulators for movement-gated triggers
-    std::unique_ptr<std::tuple<double, double, double>> prev_odom_ = nullptr;
-    double accum_d_ = 0.0;
-    double accum_a_ = 0.0;
-
-    // Best Estimate Cache (wx, wy, wth, cov_x, cov_xy, cov_y)
-    std::unique_ptr<std::tuple<double, double, double, double, double, double>> mcl_pose_ = nullptr;
-
-    // Random Engines
-    std::mt19937 gen_{std::random_device{}()};
-
-    // ROS Nodes
-    rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    // ROS 2 Communication
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr init_sub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particle_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr grid_pub_;
 
-    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr cloud_pub_;
+    // Callbacks
+    void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+
+    // MCL Core Logic
+    void initializeParticles();
+    void motionUpdate(double dx, double dy, double dtheta);
+    void sensorUpdate(const sensor_msgs::msg::LaserScan::SharedPtr scan);
+    void resample();
+    void publishVisuals();
+
+    // Map Utilities
+    void loadMapImage(std::string path);
+    bool isWall(double x, double y);
+    cv::Point worldToPixel(double wx, double wy);
+    void publishMapToOdomTransform(const rclcpp::Time& stamp);
+
+
+    // Member Variables
+    cv::Mat map_img_;
+    nav_msgs::msg::OccupancyGrid base_grid_;
+    std::vector<Particle> particles_;
+    int num_particles_ = 1500;
+
     
+    double last_x_, last_y_, last_theta_;
+    bool initialized_ = false;
+    std::default_random_engine gen_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-    rclcpp::TimerBase::SharedPtr tf_timer_;
+    Particle odom_pose_ = {0.0, 0.0, 0.0, 0.0};
+    Particle estimated_pose_ = {0.0, 0.0, 0.0, 0.0};
+    
+    double resolution_ = 0.01;
+    double origin_x_ = -0.71;
+    double origin_y_ = -3.86;
+
 };
+
 
 }
 #endif // MONTECARLO_HPP
