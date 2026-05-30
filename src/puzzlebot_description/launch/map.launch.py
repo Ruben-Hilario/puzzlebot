@@ -182,5 +182,5 @@ def generate_launch_description():
         #joint_states_bridge,
         rviz_node,
         odom_node,
-        map_publisher
+        # map_publisher
     ])

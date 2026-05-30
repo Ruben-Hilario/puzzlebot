@@ -21,7 +21,7 @@
             <visual name='visual'>
                 <geometry>
                     <mesh>
-                        <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/chassis.stl</uri>
+                        <uri>model://puzzlebot/meshes/chassis.stl</uri>
                         <!-- <scale> 0.15 0.15 0.15 </scale>
                         <uri>../wheelchair/meshes/base_link.stl</uri> -->
                     </mesh>
@@ -96,7 +96,7 @@
             <visual name="lidar_visual">
                 <geometry>
                 <mesh>
-                    <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/LiDAR.stl</uri>
+                    <uri>model://puzzlebot/meshes/LiDAR.stl</uri>
                     <scale>0.001 0.001 0.001</scale>
                 </mesh>
                 </geometry>
@@ -109,7 +109,7 @@
             <collision name="lidar_collision">
                 <geometry>
                 <mesh>
-                    <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/LiDAR.stl</uri>
+                    <uri>model://puzzlebot/meshes/LiDAR.stl</uri>
                     <scale>0.001 0.001 0.001</scale>
                 </mesh>
                 <!-- <cylinder>
@@ -137,7 +137,7 @@
             <visual name='visual'>
                 <geometry>
                     <mesh>
-                        <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/wheel.stl</uri>
+                        <uri>model://puzzlebot/meshes/wheel.stl</uri>
                         <!-- <scale>0.15 0.15 0.15</scale>
                         <uri>../wheelchair/meshes/right_wheel_link.stl</uri> -->
                     </mesh>
@@ -185,7 +185,7 @@
             <visual name='visual'>
                 <geometry>
                     <mesh>
-                        <uri>/home/ros2_ws/src/puzzlebot_description/models/puzzlebot/meshes/wheel.stl</uri>
+                        <uri>model://puzzlebot/meshes/wheel.stl</uri>
                         <!-- <scale>0.15 0.15 0.15</scale>
                         <uri>../wheelchair/meshes/left_wheel_link.stl</uri> -->
                     </mesh>
@@ -300,7 +300,8 @@
         </joint>
 
         <!-- Puzzlebot differential drive plugin -->
-        <plugin name="DiffDynamicPlugin" filename="libDiffDynamicPlugin.so">
+        <!-- <plugin name="DiffDynamicPlugin" filename="libDiffDynamicPlugin.so">  -->
+        <plugin name="DiffDynamicPlugin" filename="/home/brad/ros2_ws/puzzlebot/src/puzzlebot_description/models/plugins/libDiffDynamicPlugin.so">
             <leftJoint>left_wheel_joint</leftJoint>
             <rightJoint>right_wheel_joint</rightJoint>
             <cmd_R_topic>VelocitySetR</cmd_R_topic>

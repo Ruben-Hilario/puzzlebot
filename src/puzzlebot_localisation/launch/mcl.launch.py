@@ -12,6 +12,8 @@ ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='true'  , choices=['true', 'false'], description='Use sim time'),
     DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz'),
     DeclareLaunchArgument('use_real', default_value='false', choices=['true', 'false'], description='Use real robot'),
+    DeclareLaunchArgument('cpp', default_value='false' ),
+    DeclareLaunchArgument('python', default_value='false' )
 ]
 
 
@@ -19,6 +21,8 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     use_rviz = LaunchConfiguration('use_rviz')
     use_real = LaunchConfiguration('use_real')
+    cpp = LaunchConfiguration('cpp')
+    python = LaunchConfiguration('python')
 
     rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/puzzlebot.rviz'
     
@@ -48,11 +52,20 @@ def generate_launch_description():
         condition=IfCondition(use_real)
     )
 
-    mcl_node = Node(
+    cpp_mcl_node = Node(
         package='puzzlebot_localisation',
         executable='mcl_node',
         name='mcl_node',
-        output='screen'
+        output='screen',
+        condition=IfCondition(cpp)
+    )
+    
+    py_mcl_node = Node(
+        package='puzzlebot_localisation',
+        executable='MCL.py',
+        name='mcl_node',
+        output='screen',
+        condition=IfCondition(python)
     )
 
     rviz_node = Node(
@@ -68,7 +81,8 @@ def generate_launch_description():
         *ARGUMENTS,
         # map_node,
         localisation_node,
-        mcl_node,
+        cpp_mcl_node,
+        py_mcl_node,
         tf_bridge,
         rviz_node
     ])

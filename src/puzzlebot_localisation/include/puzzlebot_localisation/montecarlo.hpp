@@ -25,6 +25,11 @@ struct Particle {
     double weight;
 };
 
+struct Fingerprint{
+	int pixel_x, pixel_y;
+	std::vector<float> laser_ranges;
+};
+
 namespace montecarlo_mapping {
 
 //MCL Custom SLAM
@@ -48,10 +53,12 @@ private:
     void initMap();
     Particle optimizePoseByScanMatching(const Particle& predicted_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan);
     void updateMapOccupancy(const Particle& corrected_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan);
+	void recordFingerprint(const Particle& current_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan);
     void publishMap(const rclcpp::Time& stamp);
     void publishMapToOdomTransform(const rclcpp::Time& stamp);
     void saveMap();
-
+    void saveFingerprint();
+    
     // Coordinate Conversion Helpers
     bool worldToMap(double wx, double wy, int& mx, int& my) const;
     void mapToWorld(int mx, int my, double& wx, double& wy) const;
@@ -61,6 +68,8 @@ private:
     Particle current_slam_pose_;  // Corrected SLAM track in 'map' frame
     nav_msgs::msg::OccupancyGrid map_;
     std::vector<int> map_counts_;   // Hits tracking for log-odds/averaging
+    std::vector<Fingerprint> fingerprint_database_; // for LiDAR Iris approach
+    
     
     bool odom_initialized_ = false;
     bool map_initialized_ = false;
@@ -71,7 +80,11 @@ private:
     const int map_height_ = 1000;         // 20 meters high
     const double map_origin_x_ = -5.0;  // Center the (0,0) world point
     const double map_origin_y_ = -5.0;
-    const std::string filename_ = "custom_slam_output_map";
+    const std::string filename_ = "fingerprint_map";
+
+    double last_fingerprint_x_ = 0.0;
+    double last_fingerprint_y_ = 0.0;
+    bool first_fingerprint_captured_ = false;
 };
 
 
@@ -97,8 +110,10 @@ private:
     void publishEstimatedPose(const rclcpp::Time& stamp);
     void publishMapToOdomTransform(const rclcpp::Time& stamp);
     
-    // Map Loading and Publishing
+    // Loading and Publishing
     nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path);
+    void loadFingerprints(const std::string& path);
+    void applyFingerprintWeightCorrection(const sensor_msgs::msg::LaserScan::SharedPtr& msg);
     void publishMap();
     void publishMap(const nav_msgs::msg::OccupancyGrid& map);
     void computeDistanceField();
@@ -133,6 +148,8 @@ private:
     bool map_initialized_ = false;
     bool particles_initialized_ = false;
     std::vector<float> dist_field_;
+    std::vector<Fingerprint> fingerprint_db_;
+    bool fingerprints_loaded_ = false;
     
     // Filter Hyperparameters
     const size_t num_particles_ = 5000; 

@@ -30,6 +30,7 @@ MCLCustomSLAM::MCLCustomSLAM() : Node("custom_slam_node") {
 MCLCustomSLAM::~MCLCustomSLAM() {
     RCLCPP_INFO(this->get_logger(), "Node destroying. Saving final map safely...");
     saveMap();
+    saveFingerprint();
 }
 
 void MCLCustomSLAM::initMap() {
@@ -77,6 +78,8 @@ void MCLCustomSLAM::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr ms
     // 3. Publish results out to ROS2 Ecosystem
     publishMap(msg->header.stamp);
     publishMapToOdomTransform(msg->header.stamp);
+
+    recordFingerprint(current_slam_pose_, msg);
 }
 
 Particle MCLCustomSLAM::optimizePoseByScanMatching(const Particle& predicted_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan) {
@@ -225,6 +228,55 @@ void MCLCustomSLAM::updateMapOccupancy(const Particle& corrected_pose, const sen
     }
 }
 
+void MCLCustomSLAM::recordFingerprint(const Particle& current_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan) {
+    
+    // Check if this is the first run to initialize the tracking position
+    if (!first_fingerprint_captured_) {
+        int mx, my;
+        if (worldToMap(current_pose.x, current_pose.y, mx, my)) {
+            Fingerprint fp;
+            fp.pixel_x = mx;
+            fp.pixel_y = my;
+            fp.laser_ranges = scan->ranges; // Deep copy of the array vector
+
+            fingerprint_database_.push_back(fp);
+            
+            last_fingerprint_x_ = current_pose.x;
+            last_fingerprint_y_ = current_pose.y;
+            first_fingerprint_captured_ = true;
+
+            RCLCPP_INFO(this->get_logger(), "Captured INITIAL fingerprint at pixel: [%d, %d]", mx, my);
+        }
+        return;
+    }
+
+    // Calculate Euclidean distance since last recorded fingerprint
+    double distance = std::sqrt(std::pow(current_pose.x - last_fingerprint_x_, 2) + 
+                                std::pow(current_pose.y - last_fingerprint_y_, 2));
+
+    // Every 50 cm (0.5m)
+    if (distance >= 0.5) {
+        int mx, my;
+        // Convert world metric coordinates directly into map pixel indices
+        if (worldToMap(current_pose.x, current_pose.y, mx, my)) {
+            
+            Fingerprint fp;
+            fp.pixel_x = mx;
+            fp.pixel_y = my;
+            fp.laser_ranges = scan->ranges;
+
+            fingerprint_database_.push_back(fp);
+
+            // Update baseline tracking positions for next evaluation
+            last_fingerprint_x_ = current_pose.x;
+            last_fingerprint_y_ = current_pose.y;
+
+            RCLCPP_INFO(this->get_logger(), 
+                "Distance tracked: %.2f m. Captured fingerprint #%zu at pixel: [%d, %d]", 
+                distance, fingerprint_database_.size(), mx, my);
+        }
+    }
+}
 bool MCLCustomSLAM::worldToMap(double wx, double wy, int& mx, int& my) const {
     if (wx < map_origin_x_ || wy < map_origin_y_) return false;
     mx = static_cast<int>((wx - map_origin_x_) / map_resolution_);
@@ -318,11 +370,35 @@ void MCLCustomSLAM::saveMap() {
 }
 
 
+void MCLCustomSLAM::saveFingerprint(){
+	std::string fingerprint_filename = filename_ + "_fingerprints.txt";
+	std::ofstream fp_f(fingerprint_filename, std::ios::out);
+
+	if (fp_f.is_open()) {
+        fp_f << "# Total Fingerprints captured: " << fingerprint_database_.size() << "\n";
+        fp_f << "# Format: pixel_x, pixel_y, scan_ranges_separated_by_spaces...\n";
+        
+        for (const auto& fp : fingerprint_database_) {
+            fp_f << fp.pixel_x << "," << fp.pixel_y;
+            for (const auto& range : fp.laser_ranges) {
+                fp_f << " " << range;
+            }
+            fp_f << "\n";
+        }
+        fp_f.close();
+        RCLCPP_INFO(this->get_logger(), "Fingerprints saved successfully to %s", fingerprint_filename.c_str());
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "Failed to open file for saving fingerprints!");
+    }
+	
+}
+
 AMCL::AMCL() : Node("mcl_localization_node") {
     auto qos = rclcpp::SensorDataQoS();
 
     // Declare the map file path parameter
-    this->declare_parameter("map_file_path", std::string("/home/brad/ros2_ws/puzzlebot/custom_slam_output_map.yaml"));
+    // this->declare_parameter("map_file_path", std::string("/home/brad/ros2_ws/puzzlebot/maps/cartographer_gazebo.yaml"));
+    this->declare_parameter("map_file_path", std::string("/home/brad/ros2_ws/puzzlebot/fingerprint_map.yaml"));
     std::string map_file_path = this->get_parameter("map_file_path").as_string();
 
     // Subscriptions
@@ -345,6 +421,7 @@ AMCL::AMCL() : Node("mcl_localization_node") {
         publishMap();
         RCLCPP_INFO(this->get_logger(), "Map loaded from file and published! Injecting particles into free space...");
         initializeParticlesGlobal();
+        loadFingerprints(map_file_path);
     } catch (const std::exception& e) {
         RCLCPP_ERROR(this->get_logger(), "Failed to load map from file: %s", e.what());
         RCLCPP_INFO(this->get_logger(), "Falling back to map subscription mode...");
@@ -552,6 +629,8 @@ void AMCL::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
         }
         p.weight = std::exp(log_likelihood / 20.0); // Soften the weights
     }
+
+    applyFingerprintWeightCorrection(msg);
 
     // 3. Resampling, Estimation and Output
     // resampleParticles();
@@ -859,6 +938,105 @@ nav_msgs::msg::OccupancyGrid AMCL::load_map_from_file(const std::string& yaml_pa
     return map;
 }
 
+void AMCL::loadFingerprints(const std::string& yaml_path) {
+    // Convert /path/to/map.yaml into /path/to/map_fingerprints.txt
+    std::string txt_path = yaml_path;
+    size_t extension_pos = txt_path.find_last_of('.');
+    if (extension_pos != std::string::npos) {
+        txt_path = txt_path.substr(0, extension_pos) + "_fingerprints.txt";
+    }
+
+    std::ifstream file(txt_path);
+    if (!file.is_open()) {
+        RCLCPP_WARN(this->get_logger(), "Fingerprint database file not found at: %s. Proceeding without it.", txt_path.c_str());
+        return;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue; // Skip comments
+
+        std::replace(line.begin(), line.end(), ',', ' '); // Replace comma with space for stringstream
+        std::istringstream iss(line);
+        
+        Fingerprint fp;
+        if (iss >> fp.pixel_x >> fp.pixel_y) {
+            float range;
+            while (iss >> range) {
+                fp.laser_ranges.push_back(range);
+            }
+            if (!fp.laser_ranges.empty()) {
+                fingerprint_db_.push_back(fp);
+            }
+        }
+    }
+    
+    fingerprints_loaded_ = !fingerprint_db_.empty();
+    RCLCPP_INFO(this->get_logger(), "Successfully loaded %zu fingerprints for verification tracking!", fingerprint_db_.size());
+}
+
+void AMCL::applyFingerprintWeightCorrection(const sensor_msgs::msg::LaserScan::SharedPtr& msg) {
+    if (!fingerprints_loaded_ || fingerprint_db_.empty() || particles_.empty()) return;
+
+    // 1. Find which pre-saved fingerprint matches our current live LiDAR scan best
+    size_t best_fp_idx = 0;
+    double lowest_scan_error = std::numeric_limits<double>::max();
+
+    for (size_t f = 0; f < fingerprint_db_.size(); ++f) {
+        const auto& fp = fingerprint_db_[f];
+        double total_error = 0.0;
+        int valid_points = 0;
+
+        // Subsample readings to process faster (matching the speech recognition matrix optimization logic)
+        size_t step = 15; 
+        for (size_t i = 0; i < msg->ranges.size() && i < fp.laser_ranges.size(); i += step) {
+            double current_r = msg->ranges[i];
+            double saved_r = fp.laser_ranges[i];
+
+            if (current_r < msg->range_min || current_r > msg->range_max || std::isnan(current_r)) continue;
+            if (saved_r < msg->range_min || saved_r > msg->range_max || std::isnan(saved_r)) continue;
+
+            total_error += std::abs(current_r - saved_r); // Absolute Error
+            valid_points++;
+        }
+
+        if (valid_points > 0) {
+            double mean_error = total_error / valid_points;
+            if (mean_error < lowest_scan_error) {
+                lowest_scan_error = mean_error;
+                best_fp_idx = f;
+            }
+        }
+    }
+
+    // If even the best match looks totally wrong, the environment changed too much; skip adjustment
+    if (lowest_scan_error > 1.0) { // 1.0 meter average divergence threshold
+        return;
+    }
+
+    // 2. Extract the location of the best matching fingerprint
+    const auto& verified_fp = fingerprint_db_[best_fp_idx];
+    
+    // Convert the verified fingerprint pixel coordinates back into map metrics (world meters)
+    double fp_wx = map_.info.origin.position.x + (verified_fp.pixel_x + 0.5) * map_.info.resolution;
+    double fp_wy = map_.info.origin.position.y + (verified_fp.pixel_y + 0.5) * map_.info.resolution;
+
+    // 3. Adjust particle weights depending on their physical distance to this verified zone
+    // Because your map is small (4x5m), any particle further than 75cm from the anchor is likely a false positive
+    const double validation_radius = 0.75; 
+
+    for (auto& p : particles_) {
+        double dist_to_anchor = std::sqrt(std::pow(p.x - fp_wx, 2) + std::pow(p.y - fp_wy, 2));
+
+        if (dist_to_anchor <= validation_radius) {
+            // Reward particles inside the verified zone
+            p.weight *= 3.0; 
+        } else {
+            // Heavily penalize particles tracking false positive symmetries elsewhere on the map
+            p.weight *= 0.1; 
+        }
+    }
+}
 void AMCL::publishMap() {
     map_.header.stamp = this->now();
     map_pub_->publish(map_);
