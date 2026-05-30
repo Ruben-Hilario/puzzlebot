@@ -7,6 +7,7 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
+#include "geometry_msgs/msg/transform_stamped.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -18,6 +19,8 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <optional>
+#include <array>
 #include <opencv2/opencv.hpp>
 
 struct Particle {
@@ -54,10 +57,11 @@ private:
     Particle optimizePoseByScanMatching(const Particle& predicted_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan);
     void updateMapOccupancy(const Particle& corrected_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan);
 	void recordFingerprint(const Particle& current_pose, const sensor_msgs::msg::LaserScan::SharedPtr& scan);
-    void publishMap(const rclcpp::Time& stamp);
     void publishMapToOdomTransform(const rclcpp::Time& stamp);
-    void saveMap();
+    void publishMap(const rclcpp::Time& stamp);
+    void publishMatchedFingerprint();
     void saveFingerprint();
+    void saveMap();
     
     // Coordinate Conversion Helpers
     bool worldToMap(double wx, double wy, int& mx, int& my) const;
@@ -114,9 +118,10 @@ private:
     nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path);
     void loadFingerprints(const std::string& path);
     void applyFingerprintWeightCorrection(const sensor_msgs::msg::LaserScan::SharedPtr& msg);
-    void publishMap();
-    void publishMap(const nav_msgs::msg::OccupancyGrid& map);
     void computeDistanceField();
+    void publishMap(const nav_msgs::msg::OccupancyGrid& map);
+    void publishMap();
+    void publishMatchedFingerprint();
 
     // Map overlay helpers
     void markPoseOnMap(nav_msgs::msg::OccupancyGrid& grid, const Particle& pose, int pixel_half_size = 15);
@@ -129,6 +134,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particle_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr fp_debug_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
     // Random engine for particle sampling
@@ -159,8 +165,107 @@ private:
     double angle_since_resample = 0.0;
     const double RESAMPLE_DIST_THRESHOLD = 0.15; // 15 cm
     const double RESAMPLE_ANG_THRESHOLD = 0.1;  // ~11 degrees
+    int latest_matched_fp_idx = -1;
 };
 
+// Mixture MCL Node - Mixture Monte Carlo Localization
+class MCL : public rclcpp::Node {
+public:
+    MCL();
+    ~MCL() = default;
+
+private:
+    // Constants
+    static constexpr double ALPHA_SLOW = 0.001;
+    static constexpr double ALPHA_FAST = 0.1;
+
+    // ROS2 Callbacks
+    void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+    void initPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+    void tfHeartbeat();
+
+    // Map Loading & Processing
+    nav_msgs::msg::OccupancyGrid loadMapFromFile(const std::string& yaml_path);
+    void mapOpen();
+
+    // Particle Filter Methods
+    void globalLocalization();
+    std::vector<std::array<double, 3>> sampleFreeCells(size_t n);
+    std::vector<std::array<double, 3>> sampleNearEstimate(double wx, double wy, double wth, size_t n, double r_xy);
+    
+    // Motion & Sensor Models
+    void odomMotionModel(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan);
+    void resampleParticles();
+
+    // Publishing & TF
+    void publishTF(const rclcpp::Time& stamp);
+    void publish(const rclcpp::Time& stamp);
+
+    // Utilities
+    static inline double wrap(double angle);
+    static inline double clamp(double val, double min, double max);
+
+    // ROS2 Communications
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr init_sub_;
+    
+    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr cloud_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;     // Modified map with marker
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_o_pub_;   // Original map
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_br_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+
+    // Random Number Generator
+    std::mt19937 gen_{std::random_device{}()};
+
+    // Parameters
+    size_t N;                           
+    double alpha1, alpha2, alpha3, alpha4;
+    double sigma_hit;
+    double z_hit, z_rand;
+    double laser_max, laser_min;
+    int beam_step;
+    double upd_d, upd_a;                
+    int rs_interval;                        
+    // Particle Filter State
+    std::vector<std::array<double, 3>> particles_;
+    std::vector<double> weights_;
+    std::vector<std::array<int, 2>> free_cells_;        // [row, col] indices of free cells
+
+    // Map State
+    std::vector<int8_t> map_grid_;                      // Original map
+    std::vector<double> dist_map_;                      // Distance transform
+    double map_res;
+    int map_w, map_h;
+    double map_origin_x, map_origin_y;
+    double map_cos, map_sin;
+
+    // Odometry State
+    std::array<double, 3> prev_odom_;                   // [x, y, theta]
+    bool prev_odom_init_;
+    double accum_d, accum_a;
+    int scan_count;
+    bool initialized;
+
+    // MCL Quality Tracking
+    double w_slow, w_fast;
+    
+    // Best Estimate Cache
+    struct MCLPose {
+        double x, y, theta;
+        double cov_x, cov_xy, cov_y;
+    };
+    std::optional<MCLPose> mcl_pose_;
+
+    // Parameters from launch file
+    std::string map_path;
+    bool set_initial_pose;
+    double initial_pose_x, initial_pose_y, initial_pose_a;
+};
 
 }
 #endif // MONTECARLO_HPP

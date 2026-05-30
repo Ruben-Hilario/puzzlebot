@@ -24,7 +24,8 @@ def generate_launch_description():
     cpp = LaunchConfiguration('cpp')
     python = LaunchConfiguration('python')
 
-    rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/puzzlebot.rviz'
+    rviz_cpp = get_package_share_directory('puzzlebot_description') + '/rviz/puzzlebot.rviz'
+    rviz_py = get_package_share_directory('puzzlebot_description') + '/rviz/mcl_py.rviz'
     
     map_node = Node (
         package='puzzlebot_localisation',
@@ -68,13 +69,24 @@ def generate_launch_description():
         condition=IfCondition(python)
     )
 
-    rviz_node = Node(
+    cpp_rviz_node = Node(
         package='rviz2',
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d',rviz_path],
-        parameters=[{'use_sim_time': use_sim_time}]
+        arguments=['-d',rviz_cpp],
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(cpp)
+    )
+
+    py_rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d',rviz_py],
+        parameters=[{'use_sim_time':use_sim_time}],
+        condition=IfCondition(python)
     )
 
     return LaunchDescription([
@@ -84,5 +96,6 @@ def generate_launch_description():
         cpp_mcl_node,
         py_mcl_node,
         tf_bridge,
-        rviz_node
+        cpp_rviz_node,
+        py_rviz_node
     ])

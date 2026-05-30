@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 #Codigo base usado para el mapa
 #Se va a actualizar la logica a c++ para mayor rendimiento
-#!/usr/bin/env python3
 import yaml 
 import os
 import math
@@ -111,12 +110,17 @@ class MCLNode(Node):
         self.pose_pub  = self.create_publisher(PoseWithCovarianceStamped, '/mcl_pose',       10)
         self.cloud_pub = self.create_publisher(PoseArray,                  '/particle_cloud', 10)
         self.map_pub = self.create_publisher(OccupancyGrid, '/map_mcl', 10)
+        self.map_o_pub = self.create_publisher(OccupancyGrid, '/map', 10)
         self.tf_br     = TransformBroadcaster(self)
-        self.map_path = 'home/brad/ros2_ws/puzzlebot/maps/cartographer_gazebo.yaml' # change to open directly the map
+        self.map_path = '/home/brad/ros2_ws/puzzlebot/maps/cartographer_gazebo.yaml'
         self.map_grid = None
         
         # Load map from file
-        self.map_open()
+        try:
+            self.map_open()
+        except Exception as e:
+            self.get_logger().error(f'Failed to load map: {str(e)}')
+            raise
 
         self.create_timer(0.1, self._tf_heartbeat)
 
@@ -126,39 +130,94 @@ class MCLNode(Node):
     # ── Map ───────────────────────────────────────────────────────────────
     def map_open(self):
         """Load map from YAML file specified in self.map_path."""
+        self.get_logger().info(f'Loading map from: {self.map_path}')
+        
+        # Check if file exists
+        if not os.path.exists(self.map_path):
+            self.get_logger().error(f'Map YAML file not found: {self.map_path}')
+            raise FileNotFoundError(f'Map YAML file not found: {self.map_path}')
+        
         try:
             # Read YAML file to get the map path
             with open(self.map_path, 'r') as f:
                 yaml_data = yaml.safe_load(f)
             
+            if yaml_data is None:
+                self.get_logger().error(f'YAML file is empty: {self.map_path}')
+                raise ValueError('YAML file is empty')
+            
             map_image_path = yaml_data.get('image')
             if not map_image_path:
                 self.get_logger().error(f'No image path in YAML: {self.map_path}')
-                return
+                raise ValueError('No image path specified in YAML')
             
             # Handle relative paths
             if not map_image_path.startswith('/'):
                 yaml_dir = os.path.dirname(self.map_path)
                 map_image_path = os.path.join(yaml_dir, map_image_path)
             
-            # Load image using PIL
-            from PIL import Image
-            img = Image.open(map_image_path)
-            grid = np.array(img, dtype=np.int8)
+            self.get_logger().info(f'Loading map image from: {map_image_path}')
             
-            # If image is RGB, convert to grayscale
-            if len(grid.shape) == 3:
-                grid = np.mean(grid, axis=2).astype(np.int8)
+            # Check if image file exists
+            if not os.path.exists(map_image_path):
+                self.get_logger().error(f'Map image file not found: {map_image_path}')
+                raise FileNotFoundError(f'Map image file not found: {map_image_path}')
             
-            # Invert: white (255) → 0 (free), black (0) → 100 (occupied)
-            grid = 100 - (grid.astype(float) / 255.0 * 100).astype(np.int8)
+            # Extract YAML parameters (matching C++ montecarlo.cpp logic)
+            self.map_res = yaml_data.get('resolution', 0.01)
+            origin_list = yaml_data.get('origin', [0.0, 0.0, 0.0])
+            self.map_origin = (origin_list[0], origin_list[1])
             
-            # Extract map metadata from YAML
-            self.map_res = yaml_data.get('resolution', 0.05)
-            self.map_origin = (yaml_data.get('origin', [0.0, 0.0])[0],
-                              yaml_data.get('origin', [0.0, 0.0])[1])
+            negate = yaml_data.get('negate', 0)
+            occupied_thresh = yaml_data.get('occupied_thresh', 0.65)
+            free_thresh = yaml_data.get('free_thresh', 0.25)
             
-            self.map_h, self.map_w = grid.shape
+            # Load PGM file directly (binary format P5)
+            with open(map_image_path, 'rb') as pgm_file:
+                # Read PGM header
+                pgm_header = pgm_file.readline().decode().strip()
+                
+                if pgm_header != 'P5':
+                    self.get_logger().warn(f'PGM format is {pgm_header}, expected P5, attempting to parse anyway')
+                
+                # Skip comments
+                line = pgm_file.readline().decode().strip()
+                while line.startswith('#'):
+                    line = pgm_file.readline().decode().strip()
+                
+                # Parse width and height
+                width, height = map(int, line.split())
+                
+                # Parse max value
+                max_val = int(pgm_file.readline().decode().strip())
+                
+                # Read pixel data
+                pgm_data = np.frombuffer(pgm_file.read(), dtype=np.uint8)
+            
+            # Verify we got the right amount of data
+            if len(pgm_data) != width * height:
+                self.get_logger().warn(
+                    f'PGM data size mismatch: expected {width * height}, got {len(pgm_data)}')
+            
+            # Convert to occupancy grid using C++ logic
+            grid_data = np.zeros(width * height, dtype=np.int8)
+            for i in range(min(len(pgm_data), width * height)):
+                prob = 1.0 - (float(pgm_data[i]) / max_val)
+                if negate:
+                    prob = 1.0 - prob
+                
+                if prob > occupied_thresh:
+                    grid_data[i] = 100  # Occupied
+                elif prob < free_thresh:
+                    grid_data[i] = 0    # Free
+                else:
+                    grid_data[i] = -1   # Unknown
+            
+            # Reshape to grid
+            grid = grid_data.reshape((height, width))
+            
+            self.map_h = height
+            self.map_w = width
             self.map_cos = 1.0
             self.map_sin = 0.0
             
@@ -172,14 +231,18 @@ class MCLNode(Node):
             self.dist_map = distance_transform_edt(~occupied) * self.map_res
             
             self.get_logger().info(
-                f'Map loaded from {map_image_path}: {self.map_w}×{self.map_h} px @ {self.map_res} m/px | '
+                f'Map loaded successfully: {self.map_w}×{self.map_h} px @ {self.map_res} m/px | '
                 f'{len(self.free_cells)} free cells')
             
             if not self.initialized:
                 self._global_localization()
         
+        except FileNotFoundError as e:
+            self.get_logger().error(f'File not found: {str(e)}')
+            raise
         except Exception as e:
-            self.get_logger().error(f'Error loading map: {str(e)}')
+            self.get_logger().error(f'Error loading map: {type(e).__name__}: {str(e)}')
+            raise
         
 
     def _map_cb(self, msg: OccupancyGrid):
@@ -521,7 +584,7 @@ class MCLNode(Node):
 
         pm = PoseWithCovarianceStamped()
         pm.header.stamp    = stamp
-        pm.header.frame_id = 'map'
+        pm.header.frame_id = 'odom'
         pm.pose.pose.position.x    = wx
         pm.pose.pose.position.y    = wy
         pm.pose.pose.orientation.z = qz
@@ -535,7 +598,7 @@ class MCLNode(Node):
 
         pa = PoseArray()
         pa.header.stamp    = stamp
-        pa.header.frame_id = 'map'
+        pa.header.frame_id = 'odom'
         for p in self.particles:
             pose = Pose()
             pose.position.x    = float(p[0])
@@ -565,10 +628,10 @@ class MCLNode(Node):
             
             modified_map[row_start:row_end, col_start:col_end] = 50  # Mark with gray value
             
-            # Create and publish OccupancyGrid message
+            # Create and publish OccupancyGrid message for modified map
             occupancy_grid = OccupancyGrid()
             occupancy_grid.header.stamp = stamp
-            occupancy_grid.header.frame_id = 'map'
+            occupancy_grid.header.frame_id = 'odom'
             occupancy_grid.info.resolution = self.map_res
             occupancy_grid.info.width = self.map_w
             occupancy_grid.info.height = self.map_h
@@ -578,6 +641,20 @@ class MCLNode(Node):
             occupancy_grid.data = modified_map.flatten().tolist()
             
             self.map_pub.publish(occupancy_grid)
+            
+            # Publish original map
+            original_occupancy_grid = OccupancyGrid()
+            original_occupancy_grid.header.stamp = stamp
+            original_occupancy_grid.header.frame_id = 'odom'
+            original_occupancy_grid.info.resolution = self.map_res
+            original_occupancy_grid.info.width = self.map_w
+            original_occupancy_grid.info.height = self.map_h
+            original_occupancy_grid.info.origin.position.x = self.map_origin[0]
+            original_occupancy_grid.info.origin.position.y = self.map_origin[1]
+            original_occupancy_grid.info.origin.orientation.w = 1.0
+            original_occupancy_grid.data = self.map_grid.flatten().tolist()
+            
+            self.map_o_pub.publish(original_occupancy_grid)
 
         self._publish_tf(stamp)
 
@@ -600,5 +677,5 @@ def main(args=None):
     rclpy.shutdown()
 
 
-
-    
+if __name__ == '__main__':
+    main()
