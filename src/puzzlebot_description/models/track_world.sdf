@@ -67,7 +67,7 @@
 
         <include>
             <uri>model://puzzlebot</uri>
-            <pose>-1.89 1.55 0.0 0 0 -1.57</pose>
+            <pose>0 1.55 0.0 0 0 -1.57</pose>
         </include>
         <!-- <include>
             <uri>model://track</uri>

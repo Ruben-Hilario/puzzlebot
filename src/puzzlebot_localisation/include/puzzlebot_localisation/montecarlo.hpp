@@ -194,6 +194,10 @@ private:
     std::vector<std::array<double, 3>> sampleFreeCells(size_t n);
     std::vector<std::array<double, 3>> sampleNearEstimate(double wx, double wy, double wth, size_t n, double r_xy);
     
+    // Fingerprint Verification (Optional - can be commented/uncommented)
+    void loadFingerprints(const std::string& yaml_path);
+    void applyFingerprintWeightCorrection(const sensor_msgs::msg::LaserScan::SharedPtr& scan);
+    
     // Motion & Sensor Models
     void odomMotionModel(const nav_msgs::msg::Odometry::SharedPtr msg);
     void sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan);
@@ -260,6 +264,17 @@ private:
         double cov_x, cov_xy, cov_y;
     };
     std::optional<MCLPose> mcl_pose_;
+
+    // Fingerprint Verification Storage
+    std::vector<Fingerprint> fingerprint_db_;
+    bool fingerprints_loaded_ = false;
+    bool use_fingerprint_verification_ = true;  // Enable/disable fingerprint correction
+    int latest_matched_fp_idx = -1;
+    const double FINGERPRINT_ERROR_THRESHOLD = 1.0;  // meters - max acceptable scan error
+    const double FINGERPRINT_VALIDATION_RADIUS = 0.75;  // meters - distance from verified zone
+    const double FINGERPRINT_WEIGHT_BOOST = 3.0;  // Multiplier for particles in verified zone
+    const double FINGERPRINT_WEIGHT_PENALTY = 0.1;  // Multiplier for particles outside verified zone
+    const double FINGERPRINT_CONFIDENCE_THRESHOLD = 0.7;  // Minimum w_fast to use fingerprints
 
     // Parameters from launch file
     std::string map_path;

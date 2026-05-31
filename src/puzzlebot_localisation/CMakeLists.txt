@@ -46,11 +46,17 @@ add_executable(map_publisher
   src/utils.cpp
 )
 
+add_executable(obstacle_avoidance
+  src/avoidance_node.cpp
+  src/avoidance.cpp
+)
+
 target_compile_features(odom_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(kalman_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(mcl_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(route_node PUBLIC c_std_99 cxx_std_17)
 target_compile_features(map_publisher PUBLIC c_std_99 cxx_std_17)
+target_compile_features(obstacle_avoidance PUBLIC c_std_99 cxx_std_17)
 
 target_include_directories(odom_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -69,6 +75,11 @@ target_include_directories(route_node PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 target_include_directories(map_publisher PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+target_include_directories(obstacle_avoidance PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
@@ -115,12 +126,20 @@ ament_target_dependencies(map_publisher
   nav_msgs
 )
 
-install(TARGETS
+ament_target_dependencies(obstacle_avoidance
+  rclcpp
+  nav_msgs
+  geometry_msgs 
+  sensor_msgs
+)
+
+install(TARGETS# map_node,
   odom_node
   kalman_node
   mcl_node
   route_node
   map_publisher
+  obstacle_avoidance
   DESTINATION lib/${PROJECT_NAME}
 )
 

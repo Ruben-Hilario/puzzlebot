@@ -1164,7 +1164,7 @@ MCL::MCL() : Node("mcl_node") {
     pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/estimated_pose", 10);
     cloud_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("/particle_cloud", 10);
     map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map_mcl", 10);
-    map_o_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
+    //map_o_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
     tf_br_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
     // Create heartbeat timer
@@ -1175,6 +1175,8 @@ MCL::MCL() : Node("mcl_node") {
     // Load map from file
     try {
         mapOpen();
+        // Load fingerprints for optional verification
+        loadFingerprints(map_path);
     } catch (const std::exception& e) {
         RCLCPP_ERROR(this->get_logger(), "Failed to load map: %s", e.what());
         throw;
@@ -1436,6 +1438,10 @@ void MCL::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr scan) {
 
     sensorModel(scan);
     ++scan_count;
+
+    // Optional: Apply fingerprint-based weight correction if confident enough
+    // Comment/uncomment to enable/disable fingerprint verification
+    applyFingerprintWeightCorrection(scan);
 
     if (scan_count % rs_interval == 0) {
         resampleParticles();
@@ -1729,12 +1735,12 @@ void MCL::publish(const rclcpp::Time& stamp) {
         map_pub_->publish(og);
 
         // Original map
-        nav_msgs::msg::OccupancyGrid og_orig;
-        og_orig.header.stamp = stamp;
-        og_orig.header.frame_id = "odom";
-        og_orig.info = og.info;
-        og_orig.data = map_grid_;
-        map_o_pub_->publish(og_orig);
+        // nav_msgs::msg::OccupancyGrid og_orig;
+        // og_orig.header.stamp = stamp;
+        // og_orig.header.frame_id = "odom";
+        // og_orig.info = og.info;
+        // og_orig.data = map_grid_;
+        // map_o_pub_->publish(og_orig);
     }
 
     publishTF(stamp);
@@ -1746,6 +1752,132 @@ inline double MCL::wrap(double angle) {
 
 inline double MCL::clamp(double val, double min_val, double max_val) {
     return std::max(min_val, std::min(val, max_val));
+}
+
+// ============================================================================
+// MCL: Fingerprint Verification (Optional Enhancement)
+// ============================================================================
+
+void MCL::loadFingerprints(const std::string& yaml_path) {
+    // Convert /path/to/map.yaml into /path/to/map_fingerprints.txt
+    std::string txt_path = yaml_path;
+    size_t extension_pos = txt_path.find_last_of('.');
+    if (extension_pos != std::string::npos) {
+        txt_path = txt_path.substr(0, extension_pos) + "_fingerprints.txt";
+    }
+
+    std::ifstream file(txt_path);
+    if (!file.is_open()) {
+        RCLCPP_WARN(this->get_logger(), "Fingerprint database not found at: %s. "
+                   "MCL will operate without fingerprint verification.", txt_path.c_str());
+        fingerprints_loaded_ = false;
+        return;
+    }
+
+    fingerprint_db_.clear();
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue;
+
+        Fingerprint fp;
+        std::istringstream iss(line);
+        if (iss >> fp.pixel_x >> fp.pixel_y) {
+            float range;
+            while (iss >> range) {
+                fp.laser_ranges.push_back(range);
+            }
+            fingerprint_db_.push_back(fp);
+        }
+    }
+
+    fingerprints_loaded_ = !fingerprint_db_.empty();
+    RCLCPP_INFO(this->get_logger(), "Successfully loaded %zu fingerprints for verification tracking!",
+               fingerprint_db_.size());
+}
+
+void MCL::applyFingerprintWeightCorrection(const sensor_msgs::msg::LaserScan::SharedPtr& scan) {
+    // Optional fingerprint-based weight correction
+    // Can be enabled/disabled by commenting out the call in resampleParticles() or setting use_fingerprint_verification_ = false
+
+    if (!use_fingerprint_verification_ || !fingerprints_loaded_ || fingerprint_db_.empty()) {
+        return;
+    }
+
+    // Only apply fingerprint verification when filter has reasonable confidence
+    if (w_fast < FINGERPRINT_CONFIDENCE_THRESHOLD) {
+        return;
+    }
+
+    // 1. Find which pre-saved fingerprint matches current LiDAR scan best
+    size_t best_fp_idx = 0;
+    double lowest_scan_error = std::numeric_limits<double>::max();
+
+    for (size_t f = 0; f < fingerprint_db_.size(); ++f) {
+        const auto& fp = fingerprint_db_[f];
+        double total_error = 0.0;
+        int valid_points = 0;
+
+        // Subsample readings for efficiency (every 15th beam)
+        size_t step = 15;
+        for (size_t i = 0; i < scan->ranges.size() && i < fp.laser_ranges.size(); i += step) {
+            double current_r = scan->ranges[i];
+            double saved_r = fp.laser_ranges[i];
+
+            if (current_r < scan->range_min || current_r > scan->range_max || std::isnan(current_r)) continue;
+            if (saved_r < scan->range_min || saved_r > scan->range_max || std::isnan(saved_r)) continue;
+
+            total_error += std::abs(current_r - saved_r);  // Absolute error
+            valid_points++;
+        }
+
+        if (valid_points > 0) {
+            double mean_error = total_error / valid_points;
+            if (mean_error < lowest_scan_error) {
+                lowest_scan_error = mean_error;
+                best_fp_idx = f;
+            }
+        }
+    }
+
+    // If even the best match is poor, skip adjustment (environment changed too much)
+    if (lowest_scan_error > FINGERPRINT_ERROR_THRESHOLD) {
+        RCLCPP_DEBUG(this->get_logger(), "Fingerprint match error too high (%.2f > %.2f), skipping correction",
+                    lowest_scan_error, FINGERPRINT_ERROR_THRESHOLD);
+        return;
+    }
+
+    // 2. Extract location of best matching fingerprint
+    const auto& verified_fp = fingerprint_db_[best_fp_idx];
+    double fp_wx = map_origin_x + (verified_fp.pixel_x + 0.5) * map_res;
+    double fp_wy = map_origin_y + (verified_fp.pixel_y + 0.5) * map_res;
+
+    latest_matched_fp_idx = best_fp_idx;
+
+    // 3. Adjust particle weights based on distance to verified zone
+    for (size_t i = 0; i < N; ++i) {
+        double dist_to_anchor = std::sqrt(
+            std::pow(particles_[i][0] - fp_wx, 2) + 
+            std::pow(particles_[i][1] - fp_wy, 2)
+        );
+
+        if (dist_to_anchor <= FINGERPRINT_VALIDATION_RADIUS) {
+            // Reward particles inside the verified zone
+            weights_[i] *= FINGERPRINT_WEIGHT_BOOST;
+        } else {
+            // Penalize particles tracking false positive symmetries elsewhere
+            weights_[i] *= FINGERPRINT_WEIGHT_PENALTY;
+        }
+    }
+
+    // Normalize weights
+    double weight_sum = 0;
+    for (double w : weights_) weight_sum += w;
+    if (weight_sum > 0) {
+        for (double& w : weights_) w /= weight_sum;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Fingerprint verification applied: matched FP #%zu at [%d, %d] "
+               "with scan error %.3f m", best_fp_idx, verified_fp.pixel_x, verified_fp.pixel_y, lowest_scan_error);
 }
 
 }  // namespace montecarlo_mapping

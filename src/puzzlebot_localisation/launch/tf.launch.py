@@ -6,15 +6,13 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch_ros.actions import Node
 
 ARGUMENTS=[
-    DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true','false'],description='use simulation time'),
-    DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz'),
+    DeclareLaunchArgument('use_sim_time', default_value='false', choices=['true','false'],description='use simulation time')
     DeclareLaunchArgument('use_real', default_value='true',choices=['true','false'])
 ]
 
 #Remapping for real puzzlebot
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
-    use_rviz = LaunchConfiguration('use_rviz')
     urdf_path = get_package_share_directory('puzzlebot_description') + '/models/puzzlebot/model.urdf'
     robot_description = Command(['cat ', urdf_path])
 
