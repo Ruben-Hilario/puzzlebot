@@ -1076,24 +1076,29 @@ void AMCL::publishMatchedFingerprint() {
 
 MCL::MCL() : Node("mcl_node") {
     // Declare and get parameters
-    this->declare_parameter("num_particles", 5000);
+    this->declare_parameter("num_particles", 1000);
     this->declare_parameter("alpha1", 0.2);
     this->declare_parameter("alpha2", 0.2);
     this->declare_parameter("alpha3", 0.1);
     this->declare_parameter("alpha4", 0.1);
-    this->declare_parameter("sigma_hit", 0.2);
-    this->declare_parameter("z_hit", 0.8);
-    this->declare_parameter("z_rand", 0.2);
+    this->declare_parameter("sigma_hit", 0.12);
+    this->declare_parameter("sigma_hit_global", 0.30);
+    this->declare_parameter("z_hit", 0.85);
+    this->declare_parameter("z_rand", 0.15);
     this->declare_parameter("laser_max_range", 6.0);
     this->declare_parameter("laser_min_range", 0.15);
-    this->declare_parameter("beam_step", 10);
-    this->declare_parameter("update_min_d", 0.10);
-    this->declare_parameter("update_min_a", 0.10);
-    this->declare_parameter("resample_interval", 2);
+    this->declare_parameter("laser_angle_offset", 0.0);
+    this->declare_parameter("beam_step", 8);
+    this->declare_parameter("beam_step_global", 3);
+    this->declare_parameter("update_min_d", 0.05);
+    this->declare_parameter("update_min_a", 0.12);
+    this->declare_parameter("resample_interval", 1);
     this->declare_parameter("initial_pose_x", 0.0);
     this->declare_parameter("initial_pose_y", 0.0);
     this->declare_parameter("initial_pose_a", 0.0);
     this->declare_parameter("set_initial_pose", false);
+    this->declare_parameter("init_pose_spread_xy", 0.40);
+    this->declare_parameter("init_pose_spread_a", 0.30);
     this->declare_parameter("map_file_path", std::string("/home/brad/ros2_ws/puzzlebot/fingerprint_map.yaml"));
 
     N = this->get_parameter("num_particles").as_int();
@@ -1102,11 +1107,14 @@ MCL::MCL() : Node("mcl_node") {
     alpha3 = this->get_parameter("alpha3").as_double();
     alpha4 = this->get_parameter("alpha4").as_double();
     sigma_hit = this->get_parameter("sigma_hit").as_double();
+    sigma_hit_global = this->get_parameter("sigma_hit_global").as_double();
     z_hit = this->get_parameter("z_hit").as_double();
     z_rand = this->get_parameter("z_rand").as_double();
     laser_max = this->get_parameter("laser_max_range").as_double();
     laser_min = this->get_parameter("laser_min_range").as_double();
+    laser_angle_offset = this->get_parameter("laser_angle_offset").as_double();
     beam_step = this->get_parameter("beam_step").as_int();
+    beam_step_global = this->get_parameter("beam_step_global").as_int();
     upd_d = this->get_parameter("update_min_d").as_double();
     upd_a = this->get_parameter("update_min_a").as_double();
     rs_interval = this->get_parameter("resample_interval").as_int();
@@ -1114,20 +1122,21 @@ MCL::MCL() : Node("mcl_node") {
     initial_pose_x = this->get_parameter("initial_pose_x").as_double();
     initial_pose_y = this->get_parameter("initial_pose_y").as_double();
     initial_pose_a = this->get_parameter("initial_pose_a").as_double();
+    spread_xy = this->get_parameter("init_pose_spread_xy").as_double();
+    spread_a = this->get_parameter("init_pose_spread_a").as_double();
     map_path = this->get_parameter("map_file_path").as_string();
 
-    // Initialize particle filter
     particles_.resize(N, {0.0, 0.0, 0.0});
-    weights_.resize(N, 1.0 / N);
+    weights_.assign(N, 1.0 / N);
 
-    // Initialize state
-    prev_odom_init_ = false;
     accum_d = 0.0;
     accum_a = 0.0;
     scan_count = 0;
     initialized = false;
     w_slow = 0.0;
     w_fast = 0.0;
+    converged_ = false;
+
     map_cos = 1.0;
     map_sin = 0.0;
     map_origin_x = 0.0;
@@ -1136,22 +1145,13 @@ MCL::MCL() : Node("mcl_node") {
     map_w = 0;
     map_h = 0;
 
-    // Set initial pose if requested
     if (set_initial_pose) {
-        std::normal_distribution<> dist_x(initial_pose_x, 0.30);
-        std::normal_distribution<> dist_y(initial_pose_y, 0.30);
-        std::normal_distribution<> dist_a(initial_pose_a, M_PI / 12.0);  // ±15°
-
-        for (size_t i = 0; i < N; ++i) {
-            particles_[i] = {dist_x(gen_), dist_y(gen_), wrap(dist_a(gen_))};
-            weights_[i] = 1.0 / N;
-        }
+        seedParticlesAround(initial_pose_x, initial_pose_y, initial_pose_a, spread_xy, spread_a);
         initialized = true;
         RCLCPP_INFO(this->get_logger(), "Initial pose from params: x=%.2f y=%.2f a=%.1f°",
-                   initial_pose_x, initial_pose_y, initial_pose_a * 180.0 / M_PI);
+                    initial_pose_x, initial_pose_y, initial_pose_a * 180.0 / M_PI);
     }
 
-    // Create subscriptions
     auto qos = rclcpp::SensorDataQoS();
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/odom", qos, std::bind(&MCL::odomCallback, this, std::placeholders::_1));
@@ -1160,68 +1160,142 @@ MCL::MCL() : Node("mcl_node") {
     init_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
         "/initialpose", 10, std::bind(&MCL::initPoseCallback, this, std::placeholders::_1));
 
-    // Create publishers
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/estimated_pose", 10);
-    cloud_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("/particle_cloud", 10);
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("mcl_pose", 10);
+    cloud_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("particle_cloud", 10);
     map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map_mcl", 10);
-    //map_o_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
     tf_br_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
-    // Create heartbeat timer
     heartbeat_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(100),
         std::bind(&MCL::tfHeartbeat, this));
 
-    // Load map from file
     try {
         mapOpen();
-        // Load fingerprints for optional verification
-        loadFingerprints(map_path);
     } catch (const std::exception& e) {
         RCLCPP_ERROR(this->get_logger(), "Failed to load map: %s", e.what());
         throw;
     }
 
-    RCLCPP_INFO(this->get_logger(), "MCL (Mixture) ready | N=%zu particles | beam_step=%d",
-               N, beam_step);
+    RCLCPP_INFO(this->get_logger(), "MCL ready | N=%zu | sigma_local=%.2f sigma_global=%.2f | step_local=%d step_global=%d",
+                N, sigma_hit, sigma_hit_global, beam_step, beam_step_global);
+}
+
+void MCL::seedParticlesAround(double x, double y, double a, double sxy, double sa) {
+    std::normal_distribution<> dist_x(x, sxy);
+    std::normal_distribution<> dist_y(y, sxy);
+    std::normal_distribution<> dist_a(a, sa);
+
+    for (size_t i = 0; i < N; ++i) {
+        particles_[i] = {dist_x(gen_), dist_y(gen_), wrap(dist_a(gen_))};
+        weights_[i] = 1.0 / N;
+    }
 }
 
 void MCL::mapOpen() {
     RCLCPP_INFO(this->get_logger(), "Loading map from: %s", map_path.c_str());
 
     try {
-        auto map = loadMapFromFile(map_path);
-        map_grid_ = map.data;
-        map_w = map.info.width;
-        map_h = map.info.height;
-        map_res = map.info.resolution;
-        map_origin_x = map.info.origin.position.x;
-        map_origin_y = map.info.origin.position.y;
+        // Simple map parser similar to C++ previous implementation but more robust
+        // Let's reuse the loadMapFromFile logic from AMCL but we adapt it here
+        std::ifstream yaml_file(map_path);
+        if (!yaml_file.is_open()) throw std::runtime_error("Could not open YAML file");
 
-        // Compute distance transform
-        dist_map_.assign(map_w * map_h, 0.0);
-        for (int i = 0; i < map_h; ++i) {
-            for (int j = 0; j < map_w; ++j) {
-                if (map_grid_[i * map_w + j] != 100) {  // Not occupied
-                    double min_dist = 1e9;
-                    // Simplified distance: find nearest occupied cell
-                    for (int di = -10; di <= 10; ++di) {
-                        for (int dj = -10; dj <= 10; ++dj) {
-                            int ni = i + di, nj = j + dj;
-                            if (ni >= 0 && ni < map_h && nj >= 0 && nj < map_w) {
-                                if (map_grid_[ni * map_w + nj] == 100) {
-                                    double d = std::sqrt(di * di + dj * dj) * map_res;
-                                    min_dist = std::min(min_dist, d);
-                                }
-                            }
-                        }
-                    }
-                    dist_map_[i * map_w + j] = min_dist;
+        std::string image_path;
+        double resolution = 0.05;
+        std::vector<double> origin(3, 0.0);
+        int negate = 0;
+        double occupied_thresh = 0.65;
+        double free_thresh = 0.25;
+
+        std::string line;
+        while (std::getline(yaml_file, line)) {
+            size_t colon_pos = line.find(':');
+            if (colon_pos == std::string::npos) continue;
+
+            std::string key = line.substr(0, colon_pos);
+            std::string value = line.substr(colon_pos + 1);
+
+            key.erase(key.find_last_not_of(" \t\n\r") + 1);
+            value.erase(0, value.find_first_not_of(" \t\n\r"));
+            value.erase(value.find_last_not_of(" \t\n\r") + 1);
+
+            if (key == "image") {
+                image_path = value;
+            } else if (key == "resolution") {
+                resolution = std::stod(value);
+            } else if (key == "origin") {
+                value.erase(0, 1);
+                value.erase(value.size() - 1);
+                int i = 0; size_t pos = 0;
+                while (i < 3 && (pos = value.find(',')) != std::string::npos && i < 3) {
+                    origin[i++] = std::stod(value.substr(0, pos));
+                    value.erase(0, pos + 1);
                 }
+                if (i < 3) origin[i] = std::stod(value);
+            } else if (key == "negate") {
+                negate = std::stoi(value);
+            } else if (key == "occupied_thresh") {
+                occupied_thresh = std::stod(value);
+            } else if (key == "free_thresh") {
+                free_thresh = std::stod(value);
             }
         }
 
-        // Extract free cells
+        if (image_path.find('/') == std::string::npos) {
+            size_t last_slash = map_path.find_last_of('/');
+            if (last_slash != std::string::npos) {
+                image_path = map_path.substr(0, last_slash + 1) + image_path;
+            }
+        }
+
+        std::ifstream pgm_file(image_path, std::ios::binary);
+        if (!pgm_file.is_open()) throw std::runtime_error("Could not open PGM file: " + image_path);
+
+        std::string pgm_header;
+        int width, height, max_val;
+        pgm_file >> pgm_header >> width >> height >> max_val;
+        pgm_file.ignore(); // skip newline
+
+        if (pgm_header != "P5") throw std::runtime_error("Unsupported PGM format: " + pgm_header);
+
+        std::vector<uint8_t> pgm_data(width * height);
+        pgm_file.read(reinterpret_cast<char*>(pgm_data.data()), pgm_data.size());
+
+        map_res = resolution;
+        map_w = width;
+        map_h = height;
+        map_origin_x = origin[0];
+        map_origin_y = origin[1];
+        map_cos = 1.0;
+        map_sin = 0.0;
+
+        map_grid_.resize(width * height);
+        for (size_t i = 0; i < pgm_data.size(); ++i) {
+            double prob = 1.0 - (static_cast<double>(pgm_data[i]) / max_val);
+            if (negate) prob = 1.0 - prob;
+
+            if (prob > occupied_thresh) map_grid_[i] = 100;
+            else if (prob < free_thresh) map_grid_[i] = 0;
+            else map_grid_[i] = -1;
+        }
+
+        // Distance map using OpenCV
+        cv::Mat grid_mat(map_h, map_w, CV_8UC1);
+        for (int i = 0; i < map_h; ++i) {
+            for (int j = 0; j < map_w; ++j) {
+                grid_mat.at<uchar>(i, j) = (map_grid_[i * map_w + j] == 100) ? 0 : 255;
+            }
+        }
+        cv::Mat dist_mat;
+        cv::distanceTransform(grid_mat, dist_mat, cv::DIST_L2, 5);
+        
+        dist_map_.resize(map_w * map_h);
+        for (int i = 0; i < map_h; ++i) {
+            for (int j = 0; j < map_w; ++j) {
+                dist_map_[i * map_w + j] = dist_mat.at<float>(i, j) * map_res;
+            }
+        }
+
         free_cells_.clear();
         for (int i = 0; i < map_h; ++i) {
             for (int j = 0; j < map_w; ++j) {
@@ -1231,246 +1305,159 @@ void MCL::mapOpen() {
             }
         }
 
-        RCLCPP_INFO(this->get_logger(), "Map loaded: %dx%d @ %.3f m/px | %zu free cells",
-                   map_w, map_h, map_res, free_cells_.size());
+        RCLCPP_INFO(this->get_logger(), "Map loaded: %dx%d @ %.3f m/px | %zu free cells", map_w, map_h, map_res, free_cells_.size());
 
         if (!initialized) {
             globalLocalization();
         }
+
     } catch (const std::exception& e) {
         RCLCPP_ERROR(this->get_logger(), "Error loading map: %s", e.what());
         throw;
     }
 }
 
-nav_msgs::msg::OccupancyGrid MCL::loadMapFromFile(const std::string& yaml_path) {
-    nav_msgs::msg::OccupancyGrid map;
-    map.header.frame_id = "odom";
-
-    // Parse YAML file
-    std::ifstream yaml_file(yaml_path);
-    if (!yaml_file.is_open()) {
-        throw std::runtime_error("Could not open YAML file: " + yaml_path);
-    }
-
-    std::string image_path;
-    double resolution = 0.01;
-    std::vector<double> origin(3, 0.0);
-    int negate = 0;
-    double occupied_thresh = 0.65;
-    double free_thresh = 0.25;
-
-    std::string line;
-    while (std::getline(yaml_file, line)) {
-        size_t colon_pos = line.find(':');
-        if (colon_pos == std::string::npos) continue;
-
-        std::string key = line.substr(0, colon_pos);
-        std::string value = line.substr(colon_pos + 1);
-
-        // Trim whitespace
-        key.erase(key.find_last_not_of(" \t\n\r") + 1);
-        value.erase(0, value.find_first_not_of(" \t\n\r"));
-        value.erase(value.find_last_not_of(" \t\n\r") + 1);
-
-        if (key == "image") {
-            image_path = value;
-        } else if (key == "resolution") {
-            resolution = std::stod(value);
-        } else if (key == "origin") {
-            // Parse array [x, y, z]
-            value.erase(0, 1);  // Remove '['
-            value.erase(value.size() - 1);  // Remove ']'
-            int i = 0;
-            size_t pos = 0;
-            while (i < 3 && (pos = value.find(',')) != std::string::npos && i < 3) {
-                origin[i++] = std::stod(value.substr(0, pos));
-                value.erase(0, pos + 1);
-            }
-            if (i < 3) origin[i] = std::stod(value);
-        } else if (key == "negate") {
-            negate = std::stoi(value);
-        } else if (key == "occupied_thresh") {
-            occupied_thresh = std::stod(value);
-        } else if (key == "free_thresh") {
-            free_thresh = std::stod(value);
-        }
-    }
-
-    // Handle relative paths
-    if (image_path.find('/') == std::string::npos) {
-        size_t last_slash = yaml_path.find_last_of('/');
-        if (last_slash != std::string::npos) {
-            image_path = yaml_path.substr(0, last_slash + 1) + image_path;
-        }
-    }
-
-    // Load PGM file
-    std::ifstream pgm_file(image_path, std::ios::binary);
-    if (!pgm_file.is_open()) {
-        throw std::runtime_error("Could not open PGM file: " + image_path);
-    }
-
-    std::string pgm_header;
-    int width, height, max_val;
-    pgm_file >> pgm_header >> width >> height >> max_val;
-    pgm_file.ignore();
-
-    if (pgm_header != "P5") {
-        throw std::runtime_error("Unsupported PGM format: " + pgm_header);
-    }
-
-    std::vector<uint8_t> pgm_data(width * height);
-    pgm_file.read(reinterpret_cast<char*>(pgm_data.data()), pgm_data.size());
-
-    // Convert to occupancy grid
-    map.info.resolution = resolution;
-    map.info.width = width;
-    map.info.height = height;
-    map.info.origin.position.x = origin[0];
-    map.info.origin.position.y = origin[1];
-    map.info.origin.position.z = origin[2];
-    map.info.origin.orientation.w = 1.0;
-
-    map.data.resize(width * height);
-    for (size_t i = 0; i < pgm_data.size(); ++i) {
-        double prob = 1.0 - (static_cast<double>(pgm_data[i]) / max_val);
-        if (negate) prob = 1.0 - prob;
-
-        if (prob > occupied_thresh) {
-            map.data[i] = 100;  // Occupied
-        } else if (prob < free_thresh) {
-            map.data[i] = 0;    // Free
-        } else {
-            map.data[i] = -1;   // Unknown
-        }
-    }
-
-    return map;
-}
-
 void MCL::globalLocalization() {
     if (free_cells_.empty()) return;
+    particles_ = sampleFreeCells(N);
+    std::fill(weights_.begin(), weights_.end(), 1.0 / N);
+    w_slow = 0.0;
+    w_fast = 0.0;
+    converged_ = false;
+    initialized = true;
+    RCLCPP_INFO(this->get_logger(), "Global localization: %zu particles", N);
+}
 
+std::vector<std::array<double, 3>> MCL::sampleFreeCells(size_t n) {
+    std::vector<std::array<double, 3>> result(n);
     std::uniform_int_distribution<> cell_dist(0, free_cells_.size() - 1);
     std::uniform_real_distribution<> cell_offset(-0.5, 0.5);
     std::uniform_real_distribution<> angle_dist(-M_PI, M_PI);
 
-    for (size_t i = 0; i < N; ++i) {
+    for (size_t i = 0; i < n; ++i) {
         int idx = cell_dist(gen_);
-        int row = free_cells_[idx][0] + cell_offset(gen_);
-        int col = free_cells_[idx][1] + cell_offset(gen_);
+        double row = free_cells_[idx][0] + cell_offset(gen_);
+        double col = free_cells_[idx][1] + cell_offset(gen_);
 
         double x = map_origin_x + col * map_res * map_cos - row * map_res * map_sin;
         double y = map_origin_y + col * map_res * map_sin + row * map_res * map_cos;
         double theta = angle_dist(gen_);
 
-        particles_[i] = {x, y, theta};
-        weights_[i] = 1.0 / N;
+        result[i] = {x, y, theta};
+    }
+    return result;
+}
+
+std::vector<std::array<double, 3>> MCL::sampleNearEstimate(double wx, double wy, double wth, size_t n, double r_xy) {
+    size_t oversample = std::max(n * 4, n + 100);
+    std::normal_distribution<> dist_x(wx, r_xy);
+    std::normal_distribution<> dist_y(wy, r_xy);
+    std::normal_distribution<> dist_a(wth, 0.35);
+
+    std::vector<std::array<double, 3>> valid;
+    valid.reserve(n);
+
+    for (size_t i = 0; i < oversample && valid.size() < n; ++i) {
+        double x = dist_x(gen_);
+        double y = dist_y(gen_);
+        double th = wrap(dist_a(gen_));
+
+        double dx = x - map_origin_x;
+        double dy = y - map_origin_y;
+        int col = static_cast<int>((dx * map_cos + dy * map_sin) / map_res);
+        int row = static_cast<int>((-dx * map_sin + dy * map_cos) / map_res);
+
+        if (col >= 0 && col < map_w && row >= 0 && row < map_h) {
+            if (dist_map_[row * map_w + col] > 0) {
+                valid.push_back({x, y, th});
+            }
+        }
     }
 
-    w_slow = 0.0;
-    w_fast = 0.0;
-    initialized = true;
+    if (valid.size() < n) {
+        auto extra = sampleFreeCells(n - valid.size());
+        valid.insert(valid.end(), extra.begin(), extra.end());
+    }
 
-    RCLCPP_INFO(this->get_logger(), "Global localization: %zu particles across %zu free cells",
-               N, free_cells_.size());
+    return valid;
+}
+
+double MCL::quatToYaw(double qx, double qy, double qz, double qw) {
+    return std::atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz));
 }
 
 void MCL::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg) {
     double x = msg->pose.pose.position.x;
     double y = msg->pose.pose.position.y;
-    auto& q = msg->pose.pose.orientation;
-    double theta = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
-                             1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+    double theta = quatToYaw(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, 
+                             msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
 
-    if (!prev_odom_init_) {
+    if (!prev_odom_) {
         prev_odom_ = {x, y, theta};
-        prev_odom_init_ = true;
         return;
     }
 
-    double dx = x - prev_odom_[0];
-    double dy = y - prev_odom_[1];
-    double dtheta = wrap(theta - prev_odom_[2]);
+    double dx = x - (*prev_odom_)[0];
+    double dy = y - (*prev_odom_)[1];
+    double dth = wrap(theta - (*prev_odom_)[2]);
 
     double trans = std::sqrt(dx * dx + dy * dy);
-    if (trans < 1e-5 && std::abs(dtheta) < 1e-5) {
+    if (trans < 1e-5 && std::abs(dth) < 1e-5) {
         prev_odom_ = {x, y, theta};
         return;
     }
 
-    // Compute rotation components
-    double rot1 = (trans > 1e-4) ? wrap(std::atan2(dy, dx) - prev_odom_[2]) : 0.0;
-    double rot2 = wrap(dtheta - rot1);
+    double rot1 = (trans > 1e-4) ? wrap(std::atan2(dy, dx) - (*prev_odom_)[2]) : 0.0;
 
-    // Compute noise standard deviations
+    if (std::abs(rot1) > M_PI / 2.0) {
+        trans = -trans;
+        rot1 = wrap(rot1 + M_PI);
+    }
+
+    double rot2 = wrap(dth - rot1);
+
     double s_r1 = std::sqrt(alpha1 * rot1 * rot1 + alpha2 * trans * trans);
     double s_tr = std::sqrt(alpha3 * trans * trans + alpha4 * (rot1 * rot1 + rot2 * rot2));
     double s_r2 = std::sqrt(alpha1 * rot2 * rot2 + alpha2 * trans * trans);
 
-    std::normal_distribution<> noise_r1(0, s_r1);
-    std::normal_distribution<> noise_tr(0, s_tr);
-    std::normal_distribution<> noise_r2(0, s_r2);
+    std::normal_distribution<> n_r1(0.0, s_r1);
+    std::normal_distribution<> n_tr(0.0, s_tr);
+    std::normal_distribution<> n_r2(0.0, s_r2);
 
     for (size_t i = 0; i < N; ++i) {
-        double r1 = rot1 - noise_r1(gen_);
-        double tr = trans - noise_tr(gen_);
-        double r2 = rot2 - noise_r2(gen_);
+        double r1_n = rot1 - n_r1(gen_);
+        double tr_n = trans - n_tr(gen_);
+        double r2_n = rot2 - n_r2(gen_);
 
-        particles_[i][0] += tr * std::cos(particles_[i][2] + r1);
-        particles_[i][1] += tr * std::sin(particles_[i][2] + r1);
-        particles_[i][2] = wrap(particles_[i][2] + r1 + r2);
+        particles_[i][0] += tr_n * std::cos(particles_[i][2] + r1_n);
+        particles_[i][1] += tr_n * std::sin(particles_[i][2] + r1_n);
+        particles_[i][2] = wrap(particles_[i][2] + r1_n + r2_n);
     }
 
-    accum_d += trans;
-    accum_a += std::abs(dtheta);
+    accum_d += std::abs(trans);
+    accum_a += std::abs(dth);
     prev_odom_ = {x, y, theta};
 }
 
-void MCL::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr scan) {
-    if (!prev_odom_init_) return;
-
-    if (dist_map_.empty() || !initialized || (accum_d < upd_d && accum_a < upd_a)) {
-        publish(scan->header.stamp);
-        return;
-    }
-
-    sensorModel(scan);
-    ++scan_count;
-
-    // Optional: Apply fingerprint-based weight correction if confident enough
-    // Comment/uncomment to enable/disable fingerprint verification
-    applyFingerprintWeightCorrection(scan);
-
-    if (scan_count % rs_interval == 0) {
-        resampleParticles();
-    }
-
-    accum_d = 0.0;
-    accum_a = 0.0;
-    publish(scan->header.stamp);
-}
-
 void MCL::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan) {
-    auto ranges = scan->ranges;
+    double sigma = converged_ ? sigma_hit : sigma_hit_global;
+    int b_step = converged_ ? beam_step : beam_step_global;
+
     std::vector<double> log_w(N, 0.0);
-
-    double norm = 1.0 / (std::sqrt(2.0 * M_PI) * sigma_hit);
-    double sig2 = sigma_hit * sigma_hit;
-
+    double norm = 1.0 / (std::sqrt(2.0 * M_PI) * sigma);
+    double sig2 = sigma * sigma;
     int n_beams = 0;
-    for (size_t k = 0; k < ranges.size(); k += beam_step) {
-        if (!std::isfinite(ranges[k]) || ranges[k] < laser_min || ranges[k] >= laser_max) continue;
 
-        double r = ranges[k];
-        double angle = scan->angle_min + k * scan->angle_increment;
-        ++n_beams;
+    for (size_t i = 0; i < scan->ranges.size(); i += b_step) {
+        double r = scan->ranges[i];
+        if (!std::isfinite(r) || r < laser_min || r >= laser_max) continue;
+        double a = scan->angle_min + i * scan->angle_increment;
+        n_beams++;
 
-        for (size_t i = 0; i < N; ++i) {
-            double beam_angle = particles_[i][2] + angle;
-            double hx = particles_[i][0] + r * std::cos(beam_angle);
-            double hy = particles_[i][1] + r * std::sin(beam_angle);
+        for (size_t j = 0; j < N; ++j) {
+            double beam_angle = particles_[j][2] + a + laser_angle_offset;
+            double hx = particles_[j][0] + r * std::cos(beam_angle);
+            double hy = particles_[j][1] + r * std::sin(beam_angle);
 
             double dx = hx - map_origin_x;
             double dy = hy - map_origin_y;
@@ -1482,17 +1469,15 @@ void MCL::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan) {
                 d = dist_map_[row * map_w + col];
             }
 
-            double p = z_hit * norm * std::exp(-0.5 * d * d / sig2) + z_rand / laser_max;
-            log_w[i] += std::log(std::max(p, 1e-300));
+            double p = (z_hit * norm * std::exp(-0.5 * d * d / sig2)) + (z_rand / laser_max);
+            log_w[j] += std::log(std::max(p, 1e-300));
         }
     }
 
     if (n_beams == 0) return;
 
-    // Quality tracking
-    double max_log_w = *std::max_element(log_w.begin(), log_w.end());
     double avg_log_pb = 0;
-    for (double lw : log_w) avg_log_pb += (lw - max_log_w);
+    for (double lw : log_w) avg_log_pb += lw;
     avg_log_pb /= (N * n_beams);
 
     double log_min = std::log(std::max(1e-300, z_rand / laser_max));
@@ -1501,19 +1486,25 @@ void MCL::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan) {
     double quality = (rng > 0) ? (avg_log_pb - log_min) / rng : 0.5;
     quality = clamp(quality, 0.0, 1.0);
 
+    if (!converged_ && quality > CONVERGE_THRESH) {
+        converged_ = true;
+        RCLCPP_INFO(this->get_logger(), "MCL converged (quality=%.2f) -> tracking mode", quality);
+    } else if (converged_ && quality < DIVERGE_THRESH) {
+        converged_ = false;
+        RCLCPP_WARN(this->get_logger(), "MCL lost localization (quality=%.2f) -> global mode", quality);
+    }
+
     w_slow += ALPHA_SLOW * (quality - w_slow);
     w_fast += ALPHA_FAST * (quality - w_fast);
 
-    // Normalize weights
-    for (double& lw : log_w) lw -= max_log_w;
-    double weight_sum = 0;
+    double max_log = *std::max_element(log_w.begin(), log_w.end());
+    double weight_sum = 0.0;
     for (size_t i = 0; i < N; ++i) {
-        weights_[i] = std::exp(log_w[i]);
+        weights_[i] = std::exp(log_w[i] - max_log);
         weight_sum += weights_[i];
     }
     for (double& w : weights_) w /= weight_sum;
 
-    // Cache best estimate
     double wx = 0, wy = 0, wth_sin = 0, wth_cos = 0;
     for (size_t i = 0; i < N; ++i) {
         wx += weights_[i] * particles_[i][0];
@@ -1536,112 +1527,141 @@ void MCL::sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan) {
 }
 
 void MCL::resampleParticles() {
-    // Adaptive injection
     double p_rand = (w_slow > 0.05) ? std::max(0.0, 1.0 - w_fast / w_slow) : 0.0;
-    int n_rand_min = std::max(1, static_cast<int>(N / 20));
+    
+    double min_frac = converged_ ? 0.02 : 0.05;
+    int n_rand_min = std::max(1, static_cast<int>(N * min_frac));
     int n_rand = std::max(n_rand_min, static_cast<int>(N * p_rand));
     n_rand = std::min(n_rand, static_cast<int>(N - 1));
     int n_keep = N - n_rand;
 
-    // Low-variance resampling
-    std::vector<std::array<double, 3>> kept;
     std::vector<double> cumsum(N);
     cumsum[0] = weights_[0];
     for (size_t i = 1; i < N; ++i) {
         cumsum[i] = cumsum[i - 1] + weights_[i];
     }
+    cumsum[N - 1] = 1.0;
 
-    std::uniform_real_distribution<> step_dist(0, 1.0 / n_keep);
+    std::vector<std::array<double, 3>> kept;
+    kept.reserve(n_keep);
+    std::uniform_real_distribution<> dist(0, 1.0 / n_keep);
     double step = 1.0 / n_keep;
-    double pos = step_dist(gen_);
-
-    for (int i = 0; i < n_keep; ++i) {
-        auto it = std::lower_bound(cumsum.begin(), cumsum.end(), pos);
-        int idx = std::distance(cumsum.begin(), it);
-        kept.push_back(particles_[idx]);
+    double pos = dist(gen_);
+    
+    int i = 0;
+    for (int m = 0; m < n_keep; ++m) {
+        while (pos > cumsum[i] && i < static_cast<int>(N) - 1) i++;
+        kept.push_back(particles_[i]);
         pos += step;
     }
 
-    // Injection split
     double confidence = clamp(w_fast, 0.0, 1.0);
     int n_local = static_cast<int>(n_rand * confidence);
     int n_global = n_rand - n_local;
 
-    // Local injection
+    std::vector<std::array<double, 3>> parts = kept;
+
     if (n_local > 0 && mcl_pose_) {
-        // TODO: Implement sampleNearEstimate - for now inject global
-        // double r_xy = clamp(std::sqrt(mcl_pose_->cov_x + mcl_pose_->cov_y), 0.15, 1.5);
+        double r_xy = clamp(std::sqrt(mcl_pose_->cov_x + mcl_pose_->cov_y), 0.10, 1.0);
+        auto local_parts = sampleNearEstimate(mcl_pose_->x, mcl_pose_->y, mcl_pose_->theta, n_local, r_xy);
+        parts.insert(parts.end(), local_parts.begin(), local_parts.end());
+    } else if (n_local > 0) {
         n_global += n_local;
     }
 
-    // Global injection
-    if (n_global > 0 && !free_cells_.empty()) {
-        for (int i = 0; i < n_global; ++i) {
-            std::uniform_int_distribution<> dist(0, free_cells_.size() - 1);
-            int idx = dist(gen_);
-            int row = free_cells_[idx][0];
-            int col = free_cells_[idx][1];
-            double x = map_origin_x + col * map_res * map_cos - row * map_res * map_sin;
-            double y = map_origin_y + col * map_res * map_sin + row * map_res * map_cos;
-            std::uniform_real_distribution<> angle_dist(-M_PI, M_PI);
-            kept.push_back({x, y, angle_dist(gen_)});
+    if (n_global > 0) {
+        if (!free_cells_.empty()) {
+            auto global_parts = sampleFreeCells(n_global);
+            parts.insert(parts.end(), global_parts.begin(), global_parts.end());
+        } else {
+            std::uniform_int_distribution<> d(0, n_keep - 1);
+            for (int k = 0; k < n_global; ++k) {
+                parts.push_back(kept[d(gen_)]);
+            }
         }
     }
 
-    particles_ = kept;
-    particles_.resize(N);
+    particles_ = std::move(parts);
     std::fill(weights_.begin(), weights_.end(), 1.0 / N);
 }
 
 void MCL::initPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
     double x = msg->pose.pose.position.x;
     double y = msg->pose.pose.position.y;
+    double yaw = quatToYaw(msg->pose.pose.orientation.x, msg->pose.pose.orientation.y,
+                           msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
 
-    std::normal_distribution<> dist_x(x, 1.5);
-    std::normal_distribution<> dist_y(y, 1.5);
-    std::uniform_real_distribution<> dist_a(-M_PI, M_PI);
-
-    for (size_t i = 0; i < N; ++i) {
-        particles_[i] = {dist_x(gen_), dist_y(gen_), dist_a(gen_)};
-        weights_[i] = 1.0 / N;
+    if (!converged_) {
+        seedParticlesAround(x, y, yaw, 1.2, M_PI);
+    } else {
+        seedParticlesAround(x, y, yaw, spread_xy, spread_a);
     }
 
     w_slow = 0.0;
     w_fast = 0.0;
+    converged_ = false;
+    mcl_pose_.reset();
     initialized = true;
 
-    RCLCPP_INFO(this->get_logger(), "2D Pose Estimate: center (%.2f, %.2f), radius 1.5m", x, y);
+    publishTF(this->now());
+    RCLCPP_INFO(this->get_logger(), "2D Pose Estimate: x=%.2f y=%.2f yaw=%.1f", x, y, yaw * 180.0 / M_PI);
 }
 
 void MCL::tfHeartbeat() {
     publishTF(this->now());
 }
 
-void MCL::publishTF(const rclcpp::Time& stamp) {
-    if (!prev_odom_init_) return;
+void MCL::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr scan) {
+    if (!prev_odom_) return;
 
-    double wx, wy, wth;
-    if (mcl_pose_) {
-        wx = mcl_pose_->x;
-        wy = mcl_pose_->y;
-        wth = mcl_pose_->theta;
-    } else {
-        wx = wy = 0;
-        wth = 0;
-        for (size_t i = 0; i < N; ++i) {
-            wx += weights_[i] * particles_[i][0];
-            wy += weights_[i] * particles_[i][1];
+    if (!dist_map_.empty() && initialized && (accum_d >= upd_d || accum_a >= upd_a)) {
+        sensorModel(scan);
+        scan_count++;
+        if (scan_count % rs_interval == 0) {
+            resampleParticles();
         }
-        wth = std::atan2(std::sin(particles_[0][2]), std::cos(particles_[0][2]));
+        accum_d = 0.0;
+        accum_a = 0.0;
     }
 
-    double dth = wrap(wth - prev_odom_[2]);
+    publish(scan->header.stamp);
+}
+
+std::array<double, 3> MCL::bestEstimate() {
+    double wx = 0, wy = 0, wth_sin = 0, wth_cos = 0;
+    for (size_t i = 0; i < N; ++i) {
+        wx += weights_[i] * particles_[i][0];
+        wy += weights_[i] * particles_[i][1];
+        wth_sin += weights_[i] * std::sin(particles_[i][2]);
+        wth_cos += weights_[i] * std::cos(particles_[i][2]);
+    }
+    return {wx, wy, std::atan2(wth_sin, wth_cos)};
+}
+
+void MCL::publishTF(const rclcpp::Time& stamp) {
+    double wx, wy, wth;
+    if (mcl_pose_) {
+        wx = mcl_pose_->x; wy = mcl_pose_->y; wth = mcl_pose_->theta;
+    } else {
+        auto best = bestEstimate();
+        wx = best[0]; wy = best[1]; wth = best[2];
+    }
+
+    double ox = prev_odom_ ? (*prev_odom_)[0] : 0.0;
+    double oy = prev_odom_ ? (*prev_odom_)[1] : 0.0;
+    double oth = prev_odom_ ? (*prev_odom_)[2] : 0.0;
+
+    double dth = wrap(wth - oth);
+    
     geometry_msgs::msg::TransformStamped tf;
     tf.header.stamp = stamp;
     tf.header.frame_id = "map";
     tf.child_frame_id = "odom";
-    tf.transform.translation.x = wx - (prev_odom_[0] * std::cos(dth) - prev_odom_[1] * std::sin(dth));
-    tf.transform.translation.y = wy - (prev_odom_[0] * std::sin(dth) + prev_odom_[1] * std::cos(dth));
+    tf.transform.translation.x = wx - (ox * std::cos(dth) - oy * std::sin(dth));
+    tf.transform.translation.y = wy - (ox * std::sin(dth) + oy * std::cos(dth));
+    tf.transform.translation.z = 0.0;
+    tf.transform.rotation.x = 0.0;
+    tf.transform.rotation.y = 0.0;
     tf.transform.rotation.z = std::sin(dth / 2.0);
     tf.transform.rotation.w = std::cos(dth / 2.0);
 
@@ -1652,24 +1672,12 @@ void MCL::publish(const rclcpp::Time& stamp) {
     double wx, wy, wth, cov_x, cov_xy, cov_y;
 
     if (mcl_pose_) {
-        wx = mcl_pose_->x;
-        wy = mcl_pose_->y;
-        wth = mcl_pose_->theta;
-        cov_x = mcl_pose_->cov_x;
-        cov_xy = mcl_pose_->cov_xy;
-        cov_y = mcl_pose_->cov_y;
+        wx = mcl_pose_->x; wy = mcl_pose_->y; wth = mcl_pose_->theta;
+        cov_x = mcl_pose_->cov_x; cov_xy = mcl_pose_->cov_xy; cov_y = mcl_pose_->cov_y;
     } else {
-        wx = wy = cov_x = cov_xy = cov_y = 0;
-        wth = 0;
-        double wth_sin = 0, wth_cos = 0;
-        for (size_t i = 0; i < N; ++i) {
-            wx += weights_[i] * particles_[i][0];
-            wy += weights_[i] * particles_[i][1];
-            wth_sin += weights_[i] * std::sin(particles_[i][2]);
-            wth_cos += weights_[i] * std::cos(particles_[i][2]);
-        }
-        wth = std::atan2(wth_sin, wth_cos);
-
+        auto best = bestEstimate();
+        wx = best[0]; wy = best[1]; wth = best[2];
+        cov_x = cov_xy = cov_y = 0.0;
         for (size_t i = 0; i < N; ++i) {
             double dx = particles_[i][0] - wx;
             double dy = particles_[i][1] - wy;
@@ -1679,7 +1687,6 @@ void MCL::publish(const rclcpp::Time& stamp) {
         }
     }
 
-    // Publish MCL pose
     geometry_msgs::msg::PoseWithCovarianceStamped pm;
     pm.header.stamp = stamp;
     pm.header.frame_id = "odom";
@@ -1694,7 +1701,6 @@ void MCL::publish(const rclcpp::Time& stamp) {
     pm.pose.covariance[35] = 0.1;
     pose_pub_->publish(pm);
 
-    // Publish particle cloud
     geometry_msgs::msg::PoseArray pa;
     pa.header.stamp = stamp;
     pa.header.frame_id = "odom";
@@ -1708,39 +1714,33 @@ void MCL::publish(const rclcpp::Time& stamp) {
     }
     cloud_pub_->publish(pa);
 
-    // Publish maps
     if (!map_grid_.empty()) {
-        // Modified map with robot marker
-        std::vector<int8_t> modified_map = map_grid_;
-        int col = static_cast<int>(std::round((wx - map_origin_x) * map_cos / map_res));
-        int row = static_cast<int>(std::round((-wx + map_origin_x) * map_sin / map_res + (wy - map_origin_y) * map_cos / map_res));
+        std::vector<int8_t> mod_map = map_grid_;
+        int mx = static_cast<int>(std::round(((wx - map_origin_x) * map_cos + (wy - map_origin_y) * map_sin) / map_res));
+        int my = static_cast<int>(std::round((-(wx - map_origin_x) * map_sin + (wy - map_origin_y) * map_cos) / map_res));
 
-        int offset = 7;
-        for (int r = std::max(0, row - offset); r < std::min(map_h, row + offset + 1); ++r) {
-            for (int c = std::max(0, col - offset); c < std::min(map_w, col + offset + 1); ++c) {
-                modified_map[r * map_w + c] = 50;
+        int half = 7;
+        for (int dy = -half; dy <= half; ++dy) {
+            for (int dx = -half; dx <= half; ++dx) {
+                int yy = my + dy;
+                int xx = mx + dx;
+                if (yy >= 0 && yy < map_h && xx >= 0 && xx < map_w) {
+                    mod_map[yy * map_w + xx] = 50;
+                }
             }
         }
 
-        nav_msgs::msg::OccupancyGrid og;
-        og.header.stamp = stamp;
-        og.header.frame_id = "odom";
-        og.info.resolution = map_res;
-        og.info.width = map_w;
-        og.info.height = map_h;
-        og.info.origin.position.x = map_origin_x;
-        og.info.origin.position.y = map_origin_y;
-        og.info.origin.orientation.w = 1.0;
-        og.data = modified_map;
-        map_pub_->publish(og);
-
-        // Original map
-        // nav_msgs::msg::OccupancyGrid og_orig;
-        // og_orig.header.stamp = stamp;
-        // og_orig.header.frame_id = "odom";
-        // og_orig.info = og.info;
-        // og_orig.data = map_grid_;
-        // map_o_pub_->publish(og_orig);
+        nav_msgs::msg::OccupancyGrid msg;
+        msg.header.stamp = stamp;
+        msg.header.frame_id = "odom";
+        msg.info.resolution = map_res;
+        msg.info.width = map_w;
+        msg.info.height = map_h;
+        msg.info.origin.position.x = map_origin_x;
+        msg.info.origin.position.y = map_origin_y;
+        msg.info.origin.orientation.w = 1.0;
+        msg.data = mod_map;
+        map_pub_->publish(msg);
     }
 
     publishTF(stamp);
@@ -1752,132 +1752,6 @@ inline double MCL::wrap(double angle) {
 
 inline double MCL::clamp(double val, double min_val, double max_val) {
     return std::max(min_val, std::min(val, max_val));
-}
-
-// ============================================================================
-// MCL: Fingerprint Verification (Optional Enhancement)
-// ============================================================================
-
-void MCL::loadFingerprints(const std::string& yaml_path) {
-    // Convert /path/to/map.yaml into /path/to/map_fingerprints.txt
-    std::string txt_path = yaml_path;
-    size_t extension_pos = txt_path.find_last_of('.');
-    if (extension_pos != std::string::npos) {
-        txt_path = txt_path.substr(0, extension_pos) + "_fingerprints.txt";
-    }
-
-    std::ifstream file(txt_path);
-    if (!file.is_open()) {
-        RCLCPP_WARN(this->get_logger(), "Fingerprint database not found at: %s. "
-                   "MCL will operate without fingerprint verification.", txt_path.c_str());
-        fingerprints_loaded_ = false;
-        return;
-    }
-
-    fingerprint_db_.clear();
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.empty() || line[0] == '#') continue;
-
-        Fingerprint fp;
-        std::istringstream iss(line);
-        if (iss >> fp.pixel_x >> fp.pixel_y) {
-            float range;
-            while (iss >> range) {
-                fp.laser_ranges.push_back(range);
-            }
-            fingerprint_db_.push_back(fp);
-        }
-    }
-
-    fingerprints_loaded_ = !fingerprint_db_.empty();
-    RCLCPP_INFO(this->get_logger(), "Successfully loaded %zu fingerprints for verification tracking!",
-               fingerprint_db_.size());
-}
-
-void MCL::applyFingerprintWeightCorrection(const sensor_msgs::msg::LaserScan::SharedPtr& scan) {
-    // Optional fingerprint-based weight correction
-    // Can be enabled/disabled by commenting out the call in resampleParticles() or setting use_fingerprint_verification_ = false
-
-    if (!use_fingerprint_verification_ || !fingerprints_loaded_ || fingerprint_db_.empty()) {
-        return;
-    }
-
-    // Only apply fingerprint verification when filter has reasonable confidence
-    if (w_fast < FINGERPRINT_CONFIDENCE_THRESHOLD) {
-        return;
-    }
-
-    // 1. Find which pre-saved fingerprint matches current LiDAR scan best
-    size_t best_fp_idx = 0;
-    double lowest_scan_error = std::numeric_limits<double>::max();
-
-    for (size_t f = 0; f < fingerprint_db_.size(); ++f) {
-        const auto& fp = fingerprint_db_[f];
-        double total_error = 0.0;
-        int valid_points = 0;
-
-        // Subsample readings for efficiency (every 15th beam)
-        size_t step = 15;
-        for (size_t i = 0; i < scan->ranges.size() && i < fp.laser_ranges.size(); i += step) {
-            double current_r = scan->ranges[i];
-            double saved_r = fp.laser_ranges[i];
-
-            if (current_r < scan->range_min || current_r > scan->range_max || std::isnan(current_r)) continue;
-            if (saved_r < scan->range_min || saved_r > scan->range_max || std::isnan(saved_r)) continue;
-
-            total_error += std::abs(current_r - saved_r);  // Absolute error
-            valid_points++;
-        }
-
-        if (valid_points > 0) {
-            double mean_error = total_error / valid_points;
-            if (mean_error < lowest_scan_error) {
-                lowest_scan_error = mean_error;
-                best_fp_idx = f;
-            }
-        }
-    }
-
-    // If even the best match is poor, skip adjustment (environment changed too much)
-    if (lowest_scan_error > FINGERPRINT_ERROR_THRESHOLD) {
-        RCLCPP_DEBUG(this->get_logger(), "Fingerprint match error too high (%.2f > %.2f), skipping correction",
-                    lowest_scan_error, FINGERPRINT_ERROR_THRESHOLD);
-        return;
-    }
-
-    // 2. Extract location of best matching fingerprint
-    const auto& verified_fp = fingerprint_db_[best_fp_idx];
-    double fp_wx = map_origin_x + (verified_fp.pixel_x + 0.5) * map_res;
-    double fp_wy = map_origin_y + (verified_fp.pixel_y + 0.5) * map_res;
-
-    latest_matched_fp_idx = best_fp_idx;
-
-    // 3. Adjust particle weights based on distance to verified zone
-    for (size_t i = 0; i < N; ++i) {
-        double dist_to_anchor = std::sqrt(
-            std::pow(particles_[i][0] - fp_wx, 2) + 
-            std::pow(particles_[i][1] - fp_wy, 2)
-        );
-
-        if (dist_to_anchor <= FINGERPRINT_VALIDATION_RADIUS) {
-            // Reward particles inside the verified zone
-            weights_[i] *= FINGERPRINT_WEIGHT_BOOST;
-        } else {
-            // Penalize particles tracking false positive symmetries elsewhere
-            weights_[i] *= FINGERPRINT_WEIGHT_PENALTY;
-        }
-    }
-
-    // Normalize weights
-    double weight_sum = 0;
-    for (double w : weights_) weight_sum += w;
-    if (weight_sum > 0) {
-        for (double& w : weights_) w /= weight_sum;
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Fingerprint verification applied: matched FP #%zu at [%d, %d] "
-               "with scan error %.3f m", best_fp_idx, verified_fp.pixel_x, verified_fp.pixel_y, lowest_scan_error);
 }
 
 }  // namespace montecarlo_mapping

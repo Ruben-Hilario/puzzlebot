@@ -178,6 +178,8 @@ private:
     // Constants
     static constexpr double ALPHA_SLOW = 0.001;
     static constexpr double ALPHA_FAST = 0.1;
+    static constexpr double CONVERGE_THRESH = 0.62;
+    static constexpr double DIVERGE_THRESH = 0.28;
 
     // ROS2 Callbacks
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
@@ -186,30 +188,27 @@ private:
     void tfHeartbeat();
 
     // Map Loading & Processing
-    nav_msgs::msg::OccupancyGrid loadMapFromFile(const std::string& yaml_path);
     void mapOpen();
 
     // Particle Filter Methods
     void globalLocalization();
+    void seedParticlesAround(double x, double y, double a, double sxy, double sa);
     std::vector<std::array<double, 3>> sampleFreeCells(size_t n);
     std::vector<std::array<double, 3>> sampleNearEstimate(double wx, double wy, double wth, size_t n, double r_xy);
     
-    // Fingerprint Verification (Optional - can be commented/uncommented)
-    void loadFingerprints(const std::string& yaml_path);
-    void applyFingerprintWeightCorrection(const sensor_msgs::msg::LaserScan::SharedPtr& scan);
-    
     // Motion & Sensor Models
-    void odomMotionModel(const nav_msgs::msg::Odometry::SharedPtr msg);
     void sensorModel(const sensor_msgs::msg::LaserScan::SharedPtr scan);
     void resampleParticles();
 
     // Publishing & TF
+    std::array<double, 3> bestEstimate();
     void publishTF(const rclcpp::Time& stamp);
     void publish(const rclcpp::Time& stamp);
 
     // Utilities
     static inline double wrap(double angle);
     static inline double clamp(double val, double min, double max);
+    double quatToYaw(double qx, double qy, double qz, double qw);
 
     // ROS2 Communications
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -218,8 +217,7 @@ private:
     
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr cloud_pub_;
-    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;     // Modified map with marker
-    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_o_pub_;   // Original map
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_br_;
     rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 
@@ -229,34 +227,37 @@ private:
     // Parameters
     size_t N;                           
     double alpha1, alpha2, alpha3, alpha4;
-    double sigma_hit;
+    double sigma_hit, sigma_hit_global;
     double z_hit, z_rand;
     double laser_max, laser_min;
-    int beam_step;
+    double laser_angle_offset;
+    int beam_step, beam_step_global;
     double upd_d, upd_a;                
-    int rs_interval;                        
+    int rs_interval;
+    double spread_xy, spread_a;
+    
     // Particle Filter State
     std::vector<std::array<double, 3>> particles_;
     std::vector<double> weights_;
-    std::vector<std::array<int, 2>> free_cells_;        // [row, col] indices of free cells
+    std::vector<std::array<int, 2>> free_cells_;
 
     // Map State
-    std::vector<int8_t> map_grid_;                      // Original map
-    std::vector<double> dist_map_;                      // Distance transform
+    std::vector<int8_t> map_grid_;
+    std::vector<double> dist_map_;
     double map_res;
     int map_w, map_h;
     double map_origin_x, map_origin_y;
     double map_cos, map_sin;
 
     // Odometry State
-    std::array<double, 3> prev_odom_;                   // [x, y, theta]
-    bool prev_odom_init_;
+    std::optional<std::array<double, 3>> prev_odom_;
     double accum_d, accum_a;
     int scan_count;
     bool initialized;
 
     // MCL Quality Tracking
     double w_slow, w_fast;
+    bool converged_;
     
     // Best Estimate Cache
     struct MCLPose {
@@ -264,17 +265,6 @@ private:
         double cov_x, cov_xy, cov_y;
     };
     std::optional<MCLPose> mcl_pose_;
-
-    // Fingerprint Verification Storage
-    std::vector<Fingerprint> fingerprint_db_;
-    bool fingerprints_loaded_ = false;
-    bool use_fingerprint_verification_ = true;  // Enable/disable fingerprint correction
-    int latest_matched_fp_idx = -1;
-    const double FINGERPRINT_ERROR_THRESHOLD = 1.0;  // meters - max acceptable scan error
-    const double FINGERPRINT_VALIDATION_RADIUS = 0.75;  // meters - distance from verified zone
-    const double FINGERPRINT_WEIGHT_BOOST = 3.0;  // Multiplier for particles in verified zone
-    const double FINGERPRINT_WEIGHT_PENALTY = 0.1;  // Multiplier for particles outside verified zone
-    const double FINGERPRINT_CONFIDENCE_THRESHOLD = 0.7;  // Minimum w_fast to use fingerprints
 
     // Parameters from launch file
     std::string map_path;

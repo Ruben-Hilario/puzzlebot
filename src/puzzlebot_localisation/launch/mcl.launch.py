@@ -3,7 +3,7 @@ from launch_ros.actions import Node
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.substitutions import LaunchConfiguration, ThisLaunchFileDir
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
 
@@ -12,8 +12,7 @@ ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='true'  , choices=['true', 'false'], description='Use sim time'),
     DeclareLaunchArgument('use_rviz', default_value='true', choices=['true','false'], description='Enable rviz'),
     DeclareLaunchArgument('use_real', default_value='false', choices=['true', 'false'], description='Use real robot'),
-    DeclareLaunchArgument('cpp', default_value='false' ),
-    DeclareLaunchArgument('python', default_value='false' )
+    DeclareLaunchArgument('cpp', default_value='true')
 ]
 
 
@@ -22,7 +21,6 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     use_real = LaunchConfiguration('use_real')
     cpp = LaunchConfiguration('cpp')
-    python = LaunchConfiguration('python')
 
     rviz_cpp = get_package_share_directory('puzzlebot_description') + '/rviz/puzzlebot.rviz'
     rviz_py = get_package_share_directory('puzzlebot_description') + '/rviz/mcl_py.rviz'
@@ -66,7 +64,7 @@ def generate_launch_description():
         executable='MCL.py',
         name='mcl_node',
         output='screen',
-        condition=IfCondition(python)
+        condition=UnlessCondition(cpp)
     )
 
     cpp_rviz_node = Node(
@@ -86,7 +84,7 @@ def generate_launch_description():
         output='screen',
         arguments=['-d',rviz_py],
         parameters=[{'use_sim_time':use_sim_time}],
-        condition=IfCondition(python)
+        condition=UnlessCondition(cpp)
     )
 
     return LaunchDescription([
