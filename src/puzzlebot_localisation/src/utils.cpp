@@ -1,31 +1,44 @@
 #include "puzzlebot_localisation/utils.hpp"
-
+ 
 namespace puzzlebot_localisation {
 PathPlanner::PathPlanner(std::pair<int,int> start, std::pair<int,int> goal) : Node("path_planner_node"), start(start), goal(goal) {
     // Constructor can be used to initialize any necessary variables or subscriptions
     
     map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-        "map", 10, std::bind(&PathPlanner::mapCb, this, std::placeholders::_1));
+        "map_mcl", 10, std::bind(&PathPlanner::mapCb, this, std::placeholders::_1));
     
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
     map_route_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map_route", 10);
+    marked_map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("marked_map", 10);
+    debug_map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("debug_map", 10);
     
     timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
         if (planning_) {
+            publish_debug_map();
             publish_path();
+            publish_marked_map();
             publish_map_with_route();
         } else {
             RCLCPP_INFO(this->get_logger(), "Path not found.");
         }
         });
 }
-
+ 
 void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     if (planning_) return;
-
-    RCLCPP_INFO(this->get_logger(), "Map: %dx%d", msg->info.width, msg->info.height);
-    current_map_ = msg;
-    map_size = std::make_pair(msg->info.width, msg->info.height);
+ 
+   RCLCPP_INFO(this->get_logger(), "Map: %dx%d", msg->info.width, msg->info.height);
+    original_map_ = msg;
+    current_map_ = std::make_shared<nav_msgs::msg::OccupancyGrid>(*msg);
+    inflateMap(current_map_, TOLERANCE_PIXELS);
+    publish_debug_map();
+    publish_marked_map();
+    map_size = std::make_pair(current_map_->info.width, current_map_->info.height);
+    // Inside PathPlanner::aStar() before the while loop:
+    int start_idx = (start.second * current_map_->info.width) + start.first;
+    int goal_idx = (goal.second * current_map_->info.width) + goal.first;
+    RCLCPP_INFO(this->get_logger(), "Start Cell Value: %d, Goal Cell Value: %d", 
+                current_map_->data[start_idx], current_map_->data[goal_idx]);
     if (!initial_path_){
         path = aStar();
         initial_path_ = true;
@@ -33,6 +46,43 @@ void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
     else{   
         //path = DStar();
         return;
+    }
+}
+ 
+void PathPlanner::inflateMap(nav_msgs::msg::OccupancyGrid::SharedPtr inflated_map, int inflation_radius) {
+    int width = inflated_map->info.width;
+    int height = inflated_map->info.height;
+    
+    // Create a copy of the original data to read from, so inflation doesn't cascade exponentially
+    std::vector<int8_t> original_data = inflated_map->data;
+ 
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int index = (y * width) + x;
+            
+            // If the original cell is occupied (>= 50)
+            if (original_data[index] >= 50) {
+                // Draw a bounding box/circle of 'inflation_radius' around it
+                for (int dy = -inflation_radius; dy <= inflation_radius; ++dy) {
+                    for (int dx = -inflation_radius; dx <= inflation_radius; ++dx) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+
+                        // Boundary check for inflation pixels
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                            // Optional: Use Euclidean distance for a circular radius instead of a square box
+                            if ((dx * dx + dy * dy) <= (inflation_radius * inflation_radius)) {
+                                int inflate_index = (ny * width) + nx;
+                                // Only overwrite free space, don't overwrite unknown metadata (-1)
+                                if (inflated_map->data[inflate_index] < 50 && inflated_map->data[inflate_index] != -1) {
+                                    inflated_map->data[inflate_index] = 99; // Mark as inflated obstacle
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -132,32 +182,85 @@ void PathPlanner::publish_path(){
 }
 
 void PathPlanner::publish_map_with_route() {
-    if (!current_map_ || path.empty()) return;
+    if (!original_map_ || path.empty()) return;
     
-    // Create a copy of the current map
-    nav_msgs::msg::OccupancyGrid marked_map = *current_map_;
+    nav_msgs::msg::OccupancyGrid marked_map = *original_map_;
     
-    // Mark the start point with a distinct value (50 - light gray)
-    int start_idx = start.second * current_map_->info.width + start.first;
+    int start_idx = start.second * original_map_->info.width + start.first;
     if (start_idx >= 0 && start_idx < (int)marked_map.data.size()) {
-        marked_map.data[start_idx] = 50;  // Light gray for start
+        marked_map.data[start_idx] = 50; 
     }
-    // Mark the goal point with another distinct value (75 - darker gray)
-    int goal_idx = goal.second * current_map_->info.width + goal.first;
+    int goal_idx = goal.second * original_map_->info.width + goal.first;
     if (goal_idx >= 0 && goal_idx < (int)marked_map.data.size()) {
-        marked_map.data[goal_idx] = 75;  // Darker gray for goal
+        marked_map.data[goal_idx] = 75; 
     }
-    // Mark the path with intermediate value (60 - medium gray)
     for (const auto& point : path) {
-        int idx = point.second * current_map_->info.width + point.first;
+        int idx = point.second * original_map_->info.width + point.first;
         if (idx >= 0 && idx < (int)marked_map.data.size() && marked_map.data[idx] != 50 && marked_map.data[idx] != 75) {
-            marked_map.data[idx] = 60;  // Medium gray for path
+            marked_map.data[idx] = 60; 
         }
     }
     marked_map.header.stamp = this->now();
     map_route_pub_->publish(marked_map);
     RCLCPP_INFO(this->get_logger(), "Map with route published on /map_route");
 }
+
+void PathPlanner::publish_marked_map() {
+    if (!original_map_) return;
+
+    nav_msgs::msg::OccupancyGrid debug_map = *original_map_;
+    int width = debug_map.info.width;
+    int height = debug_map.info.height;
+
+    const int marker_radius = 2; 
+
+    if (start.first >= 0 && start.first < width && start.second >= 0 && start.second < height) {
+        draw_filled_circle(debug_map, start.first, start.second, marker_radius, 30);
+        RCLCPP_INFO(this->get_logger(), "Debug: Inflated Start marker around [%d, %d]", start.first, start.second);
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "Debug: Start coordinate [%d, %d] is OUT OF MAP BOUNDS!", start.first, start.second);
+    }
+
+    if (goal.first >= 0 && goal.first < width && goal.second >= 0 && goal.second < height) {
+        draw_filled_circle(debug_map, goal.first, goal.second, marker_radius, 70);
+        RCLCPP_INFO(this->get_logger(), "Debug: Inflated Goal marker around [%d, %d]", goal.first, goal.second);
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "Debug: Goal coordinate [%d, %d] is OUT OF MAP BOUNDS!", goal.first, goal.second);
+    }
+
+    debug_map.header.stamp = this->now();
+    marked_map_pub_->publish(debug_map);
+}
+
+void PathPlanner::draw_filled_circle(nav_msgs::msg::OccupancyGrid& map, int cx, int cy, int radius, int8_t value) {
+    int width = map.info.width;
+    int height = map.info.height;
+
+    for (int y = cy - radius; y <= cy + radius; ++y) {
+        for (int x = cx - radius; x <= cx + radius; ++x) {
+            if (x >= 0 && x < width && y >= 0 && y < height) {
+                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= radius * radius) {
+                    int index = (y * width) + x;
+                    map.data[index] = value;
+                }
+            }
+        }
+    }
+}
+
+void PathPlanner::publish_debug_map() {
+    // Check if the current inflated map exists
+    if (!current_map_) return;
+
+    // Create a copy to update the timestamp
+    nav_msgs::msg::OccupancyGrid debug_map = *current_map_;
+    debug_map.header.stamp = this->now();
+
+    // Publish to the "debug_map" topic via debug_map_pub_
+    debug_map_pub_->publish(debug_map);
+    RCLCPP_INFO(this->get_logger(), "Inflated debug map published on /debug_map");
+}
+
 
 DStar::DStar(std::pair<int,int> start, std::pair<int,int> goal) : Node("dstar_node"), start(start), goal(goal) {
     // Constructor can be used to initialize any necessary variables or subscriptions
@@ -474,7 +577,6 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
     nav_msgs::msg::OccupancyGrid map;
     map.header.frame_id = "map";
     
-    
     // Parse YAML file
     std::ifstream yaml_file(yaml_path);
     if (!yaml_file.is_open()) {
@@ -484,7 +586,7 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
     std::string line;
     std::string image_path;
     double resolution = 0.01;
-    std::vector<double> origin(3, 0.0);
+    std::vector<double> origin(3.0, 3.0);
     int negate = 0;
     double occupied_thresh = 0.65;
     double free_thresh = 0.25;
@@ -555,21 +657,19 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
     map.info.resolution = resolution;
     map.info.width = width;
     map.info.height = height;
-    map.info.origin.position.x = 4.0;
-    map.info.origin.position.y = 3.0;
-    map.info.origin.position.z = origin[2];
-    // map.info.origin.orientation.w = 1.0;
-    map.info.origin.orientation.x = 1.0;
+    map.info.origin.position.x = -2.0;
+    map.info.origin.position.y = -2.0;
+    map.info.origin.position.z = 0.0;
+    map.info.origin.orientation.x = 0.0;
     map.info.origin.orientation.y = 0.0;
     map.info.origin.orientation.z = 0.0;
-    map.info.origin.orientation.w = 0.0;
+    map.info.origin.orientation.w = 1.0;
     
     map.data.resize(width * height);
     for (size_t i = 0; i < pgm_data.size(); ++i) {
         // double prob = static_cast<double>(pgm_data[i]) / max_val; // use this for the one done with gazebo
         double prob = 1.0 - (static_cast<double>(pgm_data[i]) / max_val); 
         if (negate) prob = 1.0 - prob;
-
         if (prob > occupied_thresh) {
             map.data[i] = 100; // Occupied
         } else if (prob < free_thresh) {
@@ -578,7 +678,21 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
             map.data[i] = -1;  // Unknown
         }
     }
-    
+    // for (int y = height - 1; y >= 0; --y) {
+    //     for (int x = width - 1; x >= 0; --x) {
+    //         int pgm_index = y * width + x;
+    //         int map_index = y * width + (width-1-x);
+    //         double prob = 1.0 - (static_cast<double>(pgm_data[pgm_index]) / max_val); 
+    //         if (negate) prob = 1.0 - prob;
+    //         if (prob > occupied_thresh) {
+    //             map.data[map_index] = 100; 
+    //         } else if (prob < free_thresh) {
+    //             map.data[map_index] = 0;   
+    //         } else {
+    //             map.data[map_index] = -1; 
+    //         }
+    //     }
+    // }
     return map;
 }
 

@@ -3,8 +3,10 @@
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
     // Get start and goal from command line arguments with defaults
-    int start_x = 150, start_y = 400;
+    int start_x = 250, start_y = 400;
     int goal_x = 250, goal_y = 120;
+    // int start_x = 0, start_y = 0;
+    // int goal_x = 8, goal_y = 8;
     
     if (argc >= 5) {
         start_x = std::stoi(argv[1]);

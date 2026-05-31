@@ -72,21 +72,31 @@ private:
 	);
 
     void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+    void inflateMap(nav_msgs::msg::OccupancyGrid::SharedPtr inflated_map, int inflation_radius);
     void publish_path();
     void publish_map_with_route();
+    void publish_marked_map();
+    void publish_debug_map();
+    void draw_filled_circle(nav_msgs::msg::OccupancyGrid& map, int cx, int cy, int radius, int8_t value);
 
-    nav_msgs::msg::OccupancyGrid::ConstPtr current_map_;
+    nav_msgs::msg::OccupancyGrid::ConstPtr original_map_;
+    nav_msgs::msg::OccupancyGrid::SharedPtr current_map_;
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_route_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr marked_map_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr debug_map_pub_;
+    
     std::vector<std::pair<int,int>> path;
     bool initial_path_ = false;
-
     
     std::pair<int,int> map_size;
     std::pair<int,int> start, goal;
     bool planning_ = false;
     rclcpp::TimerBase::SharedPtr timer_;
+
+    const int TOLERANCE_PIXELS = 30;
+
 };
 
 class DStar : public rclcpp::Node {
