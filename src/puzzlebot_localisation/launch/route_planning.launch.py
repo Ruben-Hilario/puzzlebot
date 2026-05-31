@@ -12,7 +12,6 @@ ARGUMENTS = [
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
-
     rviz_path = get_package_share_directory('puzzlebot_description') + '/rviz/path.rviz'
     map_node = Node(
         package='puzzlebot_localisation',
@@ -20,6 +19,7 @@ def generate_launch_description():
         name='map_publisher',
         output='screen'
     )
+
     path_node = Node(
         package='puzzlebot_localisation',
         executable='route_node',
@@ -36,9 +36,9 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-
     return LaunchDescription([
+        *ARGUMENTS,
         map_node,
         path_node,
-        #rviz_node
+        rviz_node
     ])

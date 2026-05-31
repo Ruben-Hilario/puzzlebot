@@ -37,11 +37,7 @@ void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
 }
 
 // --- IMPLEMENTACIÓN A* (Optimized for flat vector) ---
-std::vector<std::pair<int, int>> PathPlanner::aStar(
-        //const std::vector<int8_t>& map_data,
-        //const std::pair<int,int>& map_size,
-        // std::pair<int,int> start, std::pair<int,int> goal
-    ) {
+std::vector<std::pair<int, int>> PathPlanner::aStar() {
     if (planning_) return {}; // Prevent concurrent planning
     std::vector<NodeAStar*> open_list;
     std::vector<NodeAStar*> closed_list;
@@ -146,13 +142,11 @@ void PathPlanner::publish_map_with_route() {
     if (start_idx >= 0 && start_idx < (int)marked_map.data.size()) {
         marked_map.data[start_idx] = 50;  // Light gray for start
     }
-    
     // Mark the goal point with another distinct value (75 - darker gray)
     int goal_idx = goal.second * current_map_->info.width + goal.first;
     if (goal_idx >= 0 && goal_idx < (int)marked_map.data.size()) {
         marked_map.data[goal_idx] = 75;  // Darker gray for goal
     }
-    
     // Mark the path with intermediate value (60 - medium gray)
     for (const auto& point : path) {
         int idx = point.second * current_map_->info.width + point.first;
@@ -160,12 +154,10 @@ void PathPlanner::publish_map_with_route() {
             marked_map.data[idx] = 60;  // Medium gray for path
         }
     }
-    
     marked_map.header.stamp = this->now();
     map_route_pub_->publish(marked_map);
     RCLCPP_INFO(this->get_logger(), "Map with route published on /map_route");
 }
-
 
 DStar::DStar(std::pair<int,int> start, std::pair<int,int> goal) : Node("dstar_node"), start(start), goal(goal) {
     // Constructor can be used to initialize any necessary variables or subscriptions
@@ -310,65 +302,6 @@ void DStar::compute_shortest_path() {
         }
     }
 }
-
-// void DStar::publish_path(){
-//     // Convert vector of pairs to nav_msgs::msg::Path
-//     nav_msgs::msg::Path path_msg;
-//     path_msg.header.frame_id = "map";
-//     path_msg.header.stamp = this->now();
-//     for (const auto& point : path) {
-//         geometry_msgs::msg::PoseStamped pose;
-//         pose.header.frame_id = "map";
-//         pose.header.stamp = this->now();
-//         //Convert to world coordinates
-//         pose.pose.position.x = (point.first * current_map_->info.resolution) + 
-//                                 current_map_->info.origin.position.x;
-//         pose.pose.position.y = (point.second * current_map_->info.resolution) + 
-//                                 current_map_->info.origin.position.y;
-        
-//         pose.pose.position.z = 0.0;
-//         pose.pose.orientation.w = 1.0;
-//         path_msg.poses.push_back(pose);
-//     }
-    
-//     path_pub_->publish(path_msg);
-//     RCLCPP_INFO(this->get_logger(), "Path found");
-// }
-
-
-// void DStar::publish_path() {
-//     nav_msgs::msg::Path path;
-//     path.header.frame_id = "map";
-//     path.header.stamp = this->now();
-
-//     int curr_x = start.first;
-//     int curr_y = start.second;
-
-//     while (curr_x != goal.first || curr_y != goal.second) {
-//         geometry_msgs::msg::PoseStamped pose;
-//         pose.pose.position.x = curr_x * current_map_->info.resolution;
-//         pose.pose.position.y = curr_y * current_map_->info.resolution;
-//         path.poses.push_back(pose);
-
-//         // Move to neighbor with minimum cost
-//         double min_val = INFINITY;
-//         int next_x = curr_x, next_y = curr_y;
-//         for (int dx = -1; dx <= 1; ++dx) {
-//             for (int dy = -1; dy <= 1; ++dy) {
-//                 double val = get_cost(curr_x + dx, curr_y + dy) + g_[{curr_x + dx, curr_y + dy}];
-//                 if (val < min_val) {
-//                     min_val = val;
-//                     next_x = curr_x + dx;
-//                     next_y = curr_y + dy;
-//                 }
-//             }
-//         }
-//         curr_x = next_x;
-//         curr_y = next_y;
-//         if (path.poses.size() > 1000) break; // Safety break
-//     }
-//     path_pub_->publish(path);
-// }
 
 void DStar::publish_path() {
     if (!current_map_) return;
