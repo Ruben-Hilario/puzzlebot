@@ -17,7 +17,7 @@ def generate_launch_description():
         package='puzzlebot_localisation',
         executable='map_publisher',
         name='map_publisher',
-        output='screen'
+        output='screen',
     )
 
     path_node = Node(
@@ -38,7 +38,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         *ARGUMENTS,
-        map_node,
         path_node,
-        rviz_node
+        rviz_node,
+        map_node,
     ])

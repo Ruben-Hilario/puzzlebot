@@ -3,43 +3,75 @@
 namespace puzzlebot_localisation {
 PathPlanner::PathPlanner(std::pair<int,int> start, std::pair<int,int> goal) : Node("path_planner_node"), start(start), goal(goal) {
     // Constructor can be used to initialize any necessary variables or subscriptions
+    this->declare_parameter("modality", std::string("sub"));
+    modality = this->get_parameter("modality").as_string();
     
     map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-        "map_mcl", 10, std::bind(&PathPlanner::mapCb, this, std::placeholders::_1));
+        "inflated_map", 10, std::bind(&PathPlanner::mapCb, this, std::placeholders::_1));
+    
+    goal_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "goal_pose", 10, std::bind(&PathPlanner::goalCb, this, std::placeholders::_1));
+    
+    current_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+        "/mcl_pose", 10, std::bind(&PathPlanner::currentCb, this, std::placeholders::_1));
     
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
     map_route_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map_route", 10);
     marked_map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("marked_map", 10);
     debug_map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("debug_map", 10);
+
+    current_pose = start;
+    goal_pose = goal;
     
     timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
         if (planning_) {
             publish_debug_map();
             publish_path();
-            publish_marked_map();
-            publish_map_with_route();
+            // publish_marked_map();
+            // publish_map_with_route();
         } else {
             RCLCPP_INFO(this->get_logger(), "Path not found.");
         }
         });
 }
- 
+
 void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(), "Map Callback");
     if (planning_) return;
  
-   RCLCPP_INFO(this->get_logger(), "Map: %dx%d", msg->info.width, msg->info.height);
+    RCLCPP_INFO(this->get_logger(), "Map: %dx%d", msg->info.width, msg->info.height);
     original_map_ = msg;
     current_map_ = std::make_shared<nav_msgs::msg::OccupancyGrid>(*msg);
-    inflateMap(current_map_, TOLERANCE_PIXELS);
     publish_debug_map();
     publish_marked_map();
     map_size = std::make_pair(current_map_->info.width, current_map_->info.height);
-    // Inside PathPlanner::aStar() before the while loop:
-    int start_idx = (start.second * current_map_->info.width) + start.first;
-    int goal_idx = (goal.second * current_map_->info.width) + goal.first;
+    
+    if (modality == "sub") {
+        start_pose = current_pose;
+        goal_pose_ = goal_pose;
+        RCLCPP_INFO(this->get_logger(), "Planning using TOPIC modality. Start: (%d,%d), Goal: (%d,%d)", 
+                    start_pose.first, start_pose.second, goal_pose_.first, goal_pose_.second);
+    } else {
+        start_pose = start;
+        goal_pose_ = goal;
+        RCLCPP_INFO(this->get_logger(), "Planning using PARAMETER modality. Start: (%d,%d), Goal: (%d,%d)", 
+                    start_pose.first, start_pose.second, goal_pose_.first, goal_pose_.second);
+    }
+
+    int start_idx = (start_pose.second * current_map_->info.width) + start_pose.first;
+    int goal_idx = (goal_pose_.second * current_map_->info.width) + goal_pose_.first;
+    
+    // Safety check to prevent out-of-bounds segfaults if coordinates are outside the map
+    if(start_idx < 0 || start_idx >= (int)current_map_->data.size() || goal_idx < 0 || goal_idx >= (int)current_map_->data.size()) {
+        RCLCPP_ERROR(this->get_logger(), "Start or Goal indexes are out of map array bounds! Postponing planning.");
+        return;
+    }
+
     RCLCPP_INFO(this->get_logger(), "Start Cell Value: %d, Goal Cell Value: %d", 
                 current_map_->data[start_idx], current_map_->data[goal_idx]);
+    
     if (!initial_path_){
+        // Pass the designated start and goal targets into aStar
         path = aStar();
         initial_path_ = true;
     }
@@ -48,52 +80,45 @@ void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
         return;
     }
 }
- 
-void PathPlanner::inflateMap(nav_msgs::msg::OccupancyGrid::SharedPtr inflated_map, int inflation_radius) {
-    int width = inflated_map->info.width;
-    int height = inflated_map->info.height;
-    
-    // Create a copy of the original data to read from, so inflation doesn't cascade exponentially
-    std::vector<int8_t> original_data = inflated_map->data;
- 
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int index = (y * width) + x;
-            
-            // If the original cell is occupied (>= 50)
-            if (original_data[index] >= 50) {
-                // Draw a bounding box/circle of 'inflation_radius' around it
-                for (int dy = -inflation_radius; dy <= inflation_radius; ++dy) {
-                    for (int dx = -inflation_radius; dx <= inflation_radius; ++dx) {
-                        int nx = x + dx;
-                        int ny = y + dy;
 
-                        // Boundary check for inflation pixels
-                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                            // Optional: Use Euclidean distance for a circular radius instead of a square box
-                            if ((dx * dx + dy * dy) <= (inflation_radius * inflation_radius)) {
-                                int inflate_index = (ny * width) + nx;
-                                // Only overwrite free space, don't overwrite unknown metadata (-1)
-                                if (inflated_map->data[inflate_index] < 50 && inflated_map->data[inflate_index] != -1) {
-                                    inflated_map->data[inflate_index] = 99; // Mark as inflated obstacle
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+void PathPlanner::goalCb(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+    if (!current_map_) return;
+    int new_goal_x = static_cast<int>((msg->pose.position.x - current_map_->info.origin.position.x) / current_map_->info.resolution);
+    int new_goal_y = static_cast<int>((msg->pose.position.y - current_map_->info.origin.position.y) / current_map_->info.resolution);
+    
+    RCLCPP_INFO(this->get_logger(), "Received new goal: (%.2f, %.2f) -> Grid: (%d, %d)", 
+                msg->pose.position.x, msg->pose.position.y, new_goal_x, new_goal_y);
+    
+    goal_pose = std::make_pair(new_goal_x, new_goal_y);
+    planning_ = false;
+    initial_path_ = false;
 }
+
+
+void PathPlanner::currentCb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+    if (!current_map_) return;
+    int new_current_x = static_cast<int>((msg->pose.pose.position.x - current_map_->info.origin.position.x) / current_map_->info.resolution);
+    int new_current_y = static_cast<int>((msg->pose.pose.position.y - current_map_->info.origin.position.y) / current_map_->info.resolution);
+    
+    RCLCPP_INFO(this->get_logger(), "Received new current position: (%.2f, %.2f) -> Grid: (%d, %d)", 
+                msg->pose.pose.position.x, msg->pose.pose.position.y, new_current_x, new_current_y);
+    
+    current_pose = std::make_pair(new_current_x, new_current_y);
+    planning_ = false;
+    initial_path_ = false;
+}
+ 
+// inflateMap removed from PathPlanner
 
 // --- IMPLEMENTACIÓN A* (Optimized for flat vector) ---
 std::vector<std::pair<int, int>> PathPlanner::aStar() {
     if (planning_) return {}; // Prevent concurrent planning
     std::vector<NodeAStar*> open_list;
     std::vector<NodeAStar*> closed_list;
-
-    NodeAStar* start_node = new NodeAStar(start.first, start.second);
-    NodeAStar* goal_node = new NodeAStar(goal.first, goal.second);
+    RCLCPP_INFO(this->get_logger(), "Starting A* search from (%d,%d) to (%d,%d)", 
+                start_pose.first, start_pose.second, goal_pose_.first, goal_pose_.second);
+    NodeAStar* start_node = new NodeAStar(start_pose.first, start_pose.second);
+    NodeAStar* goal_node = new NodeAStar(goal_pose_.first, goal_pose_.second);
     open_list.push_back(start_node);
 
     int iterations = 0;
@@ -214,16 +239,16 @@ void PathPlanner::publish_marked_map() {
 
     const int marker_radius = 2; 
 
-    if (start.first >= 0 && start.first < width && start.second >= 0 && start.second < height) {
-        draw_filled_circle(debug_map, start.first, start.second, marker_radius, 30);
-        RCLCPP_INFO(this->get_logger(), "Debug: Inflated Start marker around [%d, %d]", start.first, start.second);
+    if (start_pose.first >= 0 && start_pose.first < width && start_pose.second >= 0 && start_pose.second < height) {
+        draw_filled_circle(debug_map, start_pose.first, start_pose.second, marker_radius, 30);
+        RCLCPP_INFO(this->get_logger(), "Debug: Inflated Start marker around [%d, %d]", start_pose.first, start_pose.second);
     } else {
-        RCLCPP_ERROR(this->get_logger(), "Debug: Start coordinate [%d, %d] is OUT OF MAP BOUNDS!", start.first, start.second);
+        RCLCPP_ERROR(this->get_logger(), "Debug: Start coordinate [%d, %d] is OUT OF MAP BOUNDS!", start_pose.first, start_pose.second);
     }
 
-    if (goal.first >= 0 && goal.first < width && goal.second >= 0 && goal.second < height) {
-        draw_filled_circle(debug_map, goal.first, goal.second, marker_radius, 70);
-        RCLCPP_INFO(this->get_logger(), "Debug: Inflated Goal marker around [%d, %d]", goal.first, goal.second);
+    if (goal_pose_.first >= 0 && goal_pose_.first < width && goal_pose_.second >= 0 && goal_pose_.second < height) {
+        draw_filled_circle(debug_map, goal_pose_.first, goal_pose_.second, marker_radius, 70);
+        RCLCPP_INFO(this->get_logger(), "Debug: Inflated Goal marker around [%d, %d]", goal_pose_.first, goal_pose_.second);
     } else {
         RCLCPP_ERROR(this->get_logger(), "Debug: Goal coordinate [%d, %d] is OUT OF MAP BOUNDS!", goal.first, goal.second);
     }
@@ -266,11 +291,20 @@ DStar::DStar(std::pair<int,int> start, std::pair<int,int> goal) : Node("dstar_no
     // Constructor can be used to initialize any necessary variables or subscriptions
     
     map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-        "map", 10, std::bind(&DStar::mapCb, this, std::placeholders::_1));
+        "inflated_map", 10, std::bind(&DStar::mapCb, this, std::placeholders::_1));
+
+    goal_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "goal_pose", 10, std::bind(&DStar::goalCb, this, std::placeholders::_1));
+    
+    current_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+        "/mcl_pose", 10, std::bind(&DStar::currentCb, this, std::placeholders::_1));
     
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
     map_route_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map_route", 10);
     
+    current_pose = start;
+    goal_pose = goal;
+
     timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
         if (planning_) {
             RCLCPP_INFO(this->get_logger(),"Path found, maybe");
@@ -282,31 +316,71 @@ DStar::DStar(std::pair<int,int> start, std::pair<int,int> goal) : Node("dstar_no
         });
 }
 
+void DStar::goalCb(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+    if (!current_map_) return;
+    int new_goal_x = static_cast<int>((msg->pose.position.x - current_map_->info.origin.position.x) / current_map_->info.resolution);
+    int new_goal_y = static_cast<int>((msg->pose.position.y - current_map_->info.origin.position.y) / current_map_->info.resolution);
+    
+    goal_pose = std::make_pair(new_goal_x, new_goal_y);
+    planning_ = false;
+    initial_path_ = false;
+}
+
+void DStar::currentCb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+    if (!current_map_) return;
+    int new_current_x = static_cast<int>((msg->pose.pose.position.x - current_map_->info.origin.position.x) / current_map_->info.resolution);
+    int new_current_y = static_cast<int>((msg->pose.pose.position.y - current_map_->info.origin.position.y) / current_map_->info.resolution);
+    
+    current_pose = std::make_pair(new_current_x, new_current_y);
+    planning_ = false;
+    initial_path_ = false;
+}
+
+// inflateMap removed from DStar
+
 void DStar::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+    RCLCPP_INFO(this->get_logger(),"Map Callback");
     if (planning_) {
         RCLCPP_INFO(this->get_logger(), "Path already done.");
         return;
     }
-    RCLCPP_INFO(this->get_logger(),"Map Callback");
 
-    current_map_ = msg;
-    // Initialize or Reset D* Lite on first 
-    if (g_.empty()) {
-        for (unsigned int i = 0; i < msg->info.width; ++i) {
-            for (unsigned int j = 0; j < msg->info.height; ++j) {
-                g_[{i, j}] = INFINITY;
-                rhs_[{i, j}] = INFINITY;
+    current_map_ = std::make_shared<nav_msgs::msg::OccupancyGrid>(*msg);
+
+    start = current_pose;
+    goal = goal_pose;
+
+    if (!initial_path_) {
+        // Initialize or Reset D* Lite on first 
+        if (g_.empty()) {
+            for (unsigned int i = 0; i < msg->info.width; ++i) {
+                for (unsigned int j = 0; j < msg->info.height; ++j) {
+                    g_[{i, j}] = INFINITY;
+                    rhs_[{i, j}] = INFINITY;
+                }
             }
+            rhs_[{goal.first, goal.second}] = 0;
+            auto keys = calculate_key(goal.first, goal.second);
+            queue_.push({goal.first, goal.second, keys.first, keys.second});
         }
-        rhs_[{goal.first, goal.second}] = 0;
-        auto keys = calculate_key(goal.first, goal.second);
-        queue_.push({goal.first, goal.second, keys.first, keys.second});
+        // g_.clear();
+        // rhs_.clear();
+        // queue_ = std::priority_queue<State>();
+        // for (unsigned int i = 0; i < msg->info.width; ++i) {
+        //     for (unsigned int j = 0; j < msg->info.height; ++j) {
+        //         g_[{i, j}] = INFINITY;
+        //         rhs_[{i, j}] = INFINITY;
+        //     }
+        // }
+        // rhs_[{goal.first, goal.second}] = 0;
+        // auto keys = calculate_key(goal.first, goal.second);
+        // queue_.push({goal.first, goal.second, keys.first, keys.second});
+        RCLCPP_INFO(this->get_logger(),"Compute Shortest Path");
+        compute_shortest_path();
+        publish_path();
+        initial_path_ = true;
+        planning_ = true;
     }
-    RCLCPP_INFO(this->get_logger(),"Compute Shortest Path");
-    compute_shortest_path();
-    RCLCPP_INFO(this->get_logger(),"Boutta publish path");
-    publish_path();
-    planning_ = true;
 }
 
 double DStar::heuristic(int x1, int y1, int x2, int y2) {
@@ -536,11 +610,17 @@ void DStar::publish_map_with_route() {
 
 Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map", 10);
-    timer_ = this->create_wall_timer(std::chrono::seconds(1), [this, map_pub_]() {
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr debug_map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("inflated_map", 10);
+    map = load_map_from_file(yaml_path);
+    debug_map = map;
+    inflateMap(debug_map, TOLERANCE_PIXELS);
+    // auto map = create_simple_map(5,10,10);
+    timer_ = this->create_wall_timer(std::chrono::seconds(1), [this, map_pub_, debug_map_pub_]() {
         try {
-            auto map = load_map_from_file(yaml_path);
-            // auto map = create_simple_map(5,10,10);
+            map.header.stamp = this->now();
             map_pub_->publish(map);
+            debug_map.header.stamp = this->now();
+            debug_map_pub_->publish(debug_map);
             //RCLCPP_INFO(this->get_logger(), "Map published successfully.");
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Failed to load map: %s", e.what());
@@ -548,8 +628,35 @@ Utils::Utils(const std::string& path) : Node("utils_node"), yaml_path(path) {
     });
 }
 
+void Utils::inflateMap(nav_msgs::msg::OccupancyGrid& inflated_map, int inflation_radius) {
+    int width = inflated_map.info.width;
+    int height = inflated_map.info.height;
+    std::vector<int8_t> original_data = inflated_map.data;
+ 
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int index = (y * width) + x;
+            if (original_data[index] >= 50) {
+                for (int dy = -inflation_radius; dy <= inflation_radius; ++dy) {
+                    for (int dx = -inflation_radius; dx <= inflation_radius; ++dx) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                            if ((dx * dx + dy * dy) <= (inflation_radius * inflation_radius)) {
+                                int inflate_index = (ny * width) + nx;
+                                if (inflated_map.data[inflate_index] < 50 && inflated_map.data[inflate_index] != -1) {
+                                    inflated_map.data[inflate_index] = 99; 
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 nav_msgs::msg::OccupancyGrid Utils::create_simple_map(double resolution, int width, int height) {
-    nav_msgs::msg::OccupancyGrid map;
     map.header.frame_id = "map";
     map.info.resolution = resolution;
     map.info.width = width;
@@ -574,9 +681,7 @@ nav_msgs::msg::OccupancyGrid Utils::create_simple_map(double resolution, int wid
 
 
 nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_path) {
-    nav_msgs::msg::OccupancyGrid map;
-    map.header.frame_id = "map";
-    
+    map.header.frame_id = "odom";
     // Parse YAML file
     std::ifstream yaml_file(yaml_path);
     if (!yaml_file.is_open()) {
@@ -586,7 +691,7 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
     std::string line;
     std::string image_path;
     double resolution = 0.01;
-    std::vector<double> origin(3.0, 3.0);
+    std::vector<double> origin(3, 3.0);
     int negate = 0;
     double occupied_thresh = 0.65;
     double free_thresh = 0.25;
@@ -657,8 +762,8 @@ nav_msgs::msg::OccupancyGrid Utils::load_map_from_file(const std::string& yaml_p
     map.info.resolution = resolution;
     map.info.width = width;
     map.info.height = height;
-    map.info.origin.position.x = -2.0;
-    map.info.origin.position.y = -2.0;
+    map.info.origin.position.x = -5.0;
+    map.info.origin.position.y = -5.0;
     map.info.origin.position.z = 0.0;
     map.info.origin.orientation.x = 0.0;
     map.info.origin.orientation.y = 0.0;

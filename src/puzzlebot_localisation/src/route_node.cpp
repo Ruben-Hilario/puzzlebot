@@ -8,17 +8,10 @@ int main(int argc, char** argv) {
     // int start_x = 0, start_y = 0;
     // int goal_x = 8, goal_y = 8;
     
-    if (argc >= 5) {
-        start_x = std::stoi(argv[1]);
-        start_y = std::stoi(argv[2]);
-        goal_x = std::stoi(argv[3]);
-        goal_y = std::stoi(argv[4]);
-    }
-    
     std::pair<int,int> start(start_x, start_y);
     std::pair<int,int> goal(goal_x, goal_y);
-    RCLCPP_INFO(rclcpp::get_logger("route_node"), "Starting path planner: start=(%d,%d) goal=(%d,%d)", start_x, start_y, goal_x, goal_y);
     
+    //RCLCPP_INFO(rclcpp::get_logger("route_node"), "Starting path planner: start=(%d,%d) goal=(%d,%d)", start_x, start_y, goal_x, goal_y);
     auto node = std::make_shared<puzzlebot_localisation::PathPlanner>(start, goal);
     // auto node = std::make_shared<puzzlebot_localisation::DStar>(start,goal);
     rclcpp::spin(node);

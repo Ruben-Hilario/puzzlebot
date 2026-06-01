@@ -5,6 +5,7 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include <vector>
 #include <queue>
 #include <cmath>
@@ -65,14 +66,12 @@ public:
     
 private:
     //  A*
-    std::vector<std::pair<int,int>> aStar(              //Add margin from pixels to path planner
-		// const std::vector<int8_t>& map_data
-        // std::pair<int,int> map_size,
-        // std::pair<int,int> start, std::pair<int,int> goal
-	);
+    std::vector<std::pair<int,int>> aStar();
 
     void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
-    void inflateMap(nav_msgs::msg::OccupancyGrid::SharedPtr inflated_map, int inflation_radius);
+    void goalCb(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    void currentCb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+
     void publish_path();
     void publish_map_with_route();
     void publish_marked_map();
@@ -82,6 +81,8 @@ private:
     nav_msgs::msg::OccupancyGrid::ConstPtr original_map_;
     nav_msgs::msg::OccupancyGrid::SharedPtr current_map_;
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr current_sub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_route_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr marked_map_pub_;
@@ -91,12 +92,10 @@ private:
     bool initial_path_ = false;
     
     std::pair<int,int> map_size;
-    std::pair<int,int> start, goal;
+    std::pair<int,int> start, goal, goal_pose, current_pose, goal_pose_, start_pose ;
     bool planning_ = false;
     rclcpp::TimerBase::SharedPtr timer_;
-
-    const int TOLERANCE_PIXELS = 30;
-
+    std::string modality = "sub"; 
 };
 
 class DStar : public rclcpp::Node {
@@ -106,6 +105,8 @@ public:
 
 private:
     void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
+    void goalCb(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    void currentCb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
     void publish_path();
     void publish_map_with_route();
 
@@ -118,12 +119,14 @@ private:
 
     // ROS2 Utilities
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr current_sub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_route_pub_;
 
     // Map Data
     nav_msgs::msg::OccupancyGrid::SharedPtr current_map_;
-    std::pair<int,int> start, goal;
+    std::pair<int,int> start, goal, current_pose, goal_pose;
      // Example coordinates
     double km_{0.0};
 
@@ -132,6 +135,7 @@ private:
     std::priority_queue<State> queue_;
 
     bool planning_ = false;
+    bool initial_path_ = false;
     rclcpp::TimerBase::SharedPtr timer_;
 
 };
@@ -146,6 +150,11 @@ public:
     nav_msgs::msg::OccupancyGrid load_map_from_file(const std::string& yaml_path);
     std::string yaml_path;
     rclcpp::TimerBase::SharedPtr timer_;
+    void publishTF(const rclcpp::Time& stamp);
+    void inflateMap(nav_msgs::msg::OccupancyGrid& inflated_map, int inflation_radius);
+    nav_msgs::msg::OccupancyGrid map;
+    nav_msgs::msg::OccupancyGrid debug_map;
+    const int TOLERANCE_PIXELS = 30;
 };
 
 

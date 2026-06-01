@@ -87,13 +87,22 @@ def generate_launch_description():
         condition=UnlessCondition(cpp)
     )
 
+    route_node = Node(
+        package='puzzlebot_localisation',
+        executable='route_node',
+        name='route_node',
+        output='screen',
+    )
+
     return LaunchDescription([
         *ARGUMENTS,
-        # map_node,
         localisation_node,
         cpp_mcl_node,
         py_mcl_node,
         tf_bridge,
+        route_node,
         cpp_rviz_node,
-        py_rviz_node
+        py_rviz_node,
+        map_node,
+        
     ])

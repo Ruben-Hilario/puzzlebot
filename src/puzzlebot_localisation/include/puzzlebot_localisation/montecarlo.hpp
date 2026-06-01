@@ -185,6 +185,7 @@ private:
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
     void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
     void initPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+
     void tfHeartbeat();
 
     // Map Loading & Processing
@@ -218,6 +219,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr cloud_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_pub_;
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr original_map_pub_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_br_;
     rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 

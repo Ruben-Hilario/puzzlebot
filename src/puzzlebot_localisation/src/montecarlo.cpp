@@ -1160,9 +1160,10 @@ MCL::MCL() : Node("mcl_node") {
     init_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
         "/initialpose", 10, std::bind(&MCL::initPoseCallback, this, std::placeholders::_1));
 
-    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("mcl_pose", 10);
+    pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/mcl_pose", 10);
     cloud_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>("particle_cloud", 10);
     map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map_mcl", 10);
+    // original_map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
     tf_br_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
     heartbeat_timer_ = this->create_wall_timer(
