@@ -14,6 +14,9 @@ PathPlanner::PathPlanner(std::pair<int,int> start, std::pair<int,int> goal) : No
     
     current_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
         "/mcl_pose", 10, std::bind(&PathPlanner::currentCb, this, std::placeholders::_1));
+
+    state_sub_ = this->create_subscription<std_msgs::msg::String>(
+        "state_pub", 10, std::bind(&PathPlanner::stateCb, this, std::placeholders::_1));
     
     path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
     map_route_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("map_route", 10);
@@ -24,15 +27,19 @@ PathPlanner::PathPlanner(std::pair<int,int> start, std::pair<int,int> goal) : No
     goal_pose = goal;
     
     timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() {
-        if (planning_) {
+        if (planning_ && current_bot_state == "stopped") {
             publish_debug_map();
             publish_path();
             // publish_marked_map();
             // publish_map_with_route();
-        } else {
+        } else if (!planning_) {
             RCLCPP_INFO(this->get_logger(), "Path not found.");
         }
         });
+}
+
+void PathPlanner::stateCb(const std_msgs::msg::String::SharedPtr msg) {
+    current_bot_state = msg->data;
 }
 
 void PathPlanner::mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
@@ -86,6 +93,14 @@ void PathPlanner::goalCb(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     int new_goal_x = static_cast<int>((msg->pose.position.x - current_map_->info.origin.position.x) / current_map_->info.resolution);
     int new_goal_y = static_cast<int>((msg->pose.position.y - current_map_->info.origin.position.y) / current_map_->info.resolution);
     
+    if (goal_pose.first == new_goal_x && goal_pose.second == new_goal_y) {
+        return;
+    }
+    
+    if (current_bot_state != "stopped") {
+        return;
+    }
+    
     RCLCPP_INFO(this->get_logger(), "Received new goal: (%.2f, %.2f) -> Grid: (%d, %d)", 
                 msg->pose.position.x, msg->pose.position.y, new_goal_x, new_goal_y);
     
@@ -100,6 +115,14 @@ void PathPlanner::currentCb(const geometry_msgs::msg::PoseWithCovarianceStamped:
     int new_current_x = static_cast<int>((msg->pose.pose.position.x - current_map_->info.origin.position.x) / current_map_->info.resolution);
     int new_current_y = static_cast<int>((msg->pose.pose.position.y - current_map_->info.origin.position.y) / current_map_->info.resolution);
     
+    if (current_pose.first == new_current_x && current_pose.second == new_current_y) {
+        return;
+    }
+    
+    if (current_bot_state != "stopped") {
+        return;
+    }
+    
     RCLCPP_INFO(this->get_logger(), "Received new current position: (%.2f, %.2f) -> Grid: (%d, %d)", 
                 msg->pose.pose.position.x, msg->pose.pose.position.y, new_current_x, new_current_y);
     
@@ -112,19 +135,25 @@ void PathPlanner::currentCb(const geometry_msgs::msg::PoseWithCovarianceStamped:
 
 // --- IMPLEMENTACIÓN A* (Optimized for flat vector) ---
 std::vector<std::pair<int, int>> PathPlanner::aStar() {
-    if (planning_) return {}; // Prevent concurrent planning
+
+    if (planning_){
+        RCLCPP_INFO(this->get_logger(), "Planning in progress. Postponing new planning request.");
+        return {}; // Prevent concurrent planning
+    }
     std::vector<NodeAStar*> open_list;
     std::vector<NodeAStar*> closed_list;
-    RCLCPP_INFO(this->get_logger(), "Starting A* search from (%d,%d) to (%d,%d)", 
-                start_pose.first, start_pose.second, goal_pose_.first, goal_pose_.second);
+    RCLCPP_INFO(this->get_logger(), "Starting A* search from (%d,%d) to (%d,%d)", start_pose.first, start_pose.second, goal_pose_.first, goal_pose_.second);
     NodeAStar* start_node = new NodeAStar(start_pose.first, start_pose.second);
+    RCLCPP_DEBUG(this->get_logger(),"1");
     NodeAStar* goal_node = new NodeAStar(goal_pose_.first, goal_pose_.second);
+    RCLCPP_DEBUG(this->get_logger(),"2");
     open_list.push_back(start_node);
-
+    RCLCPP_DEBUG(this->get_logger(),"3");
     int iterations = 0;
     const int max_iter = 150000;
+    RCLCPP_DEBUG(this->get_logger(),"4");
     const std::vector<std::pair<int, int>> neighbors = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
-
+    RCLCPP_DEBUG(this->get_logger(),"5");
     while (!open_list.empty() && iterations < max_iter) {
         iterations++;
 

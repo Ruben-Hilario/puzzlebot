@@ -94,6 +94,13 @@ def generate_launch_description():
         output='screen',
     )
 
+    follower_node = Node(
+        package='puzzlebot_localisation',
+        executable='navigation_node',
+        name='navigation_node',
+        output='screen',
+    )
+
     return LaunchDescription([
         *ARGUMENTS,
         localisation_node,
@@ -103,6 +110,6 @@ def generate_launch_description():
         route_node,
         cpp_rviz_node,
         py_rviz_node,
+        follower_node,
         map_node,
-        
     ])

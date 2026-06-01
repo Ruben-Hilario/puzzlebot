@@ -6,6 +6,7 @@
 #include "nav_msgs/msg/path.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "std_msgs/msg/string.hpp"
 #include <vector>
 #include <queue>
 #include <cmath>
@@ -71,6 +72,7 @@ private:
     void mapCb(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
     void goalCb(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void currentCb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+    void stateCb(const std_msgs::msg::String::SharedPtr msg);
 
     void publish_path();
     void publish_map_with_route();
@@ -83,6 +85,7 @@ private:
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub;
     rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr current_sub_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr state_sub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map_route_pub_;
     rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr marked_map_pub_;
@@ -92,10 +95,11 @@ private:
     bool initial_path_ = false;
     
     std::pair<int,int> map_size;
-    std::pair<int,int> start, goal, goal_pose, current_pose, goal_pose_, start_pose ;
+    std::pair<int,int> start, goal, goal_pose, current_pose, goal_pose_, start_pose;
     bool planning_ = false;
     rclcpp::TimerBase::SharedPtr timer_;
     std::string modality = "sub"; 
+    std::string current_bot_state = "idle";
 };
 
 class DStar : public rclcpp::Node {

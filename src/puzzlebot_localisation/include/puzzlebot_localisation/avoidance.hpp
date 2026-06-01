@@ -4,6 +4,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav_msgs/msg/path.hpp"
 #include "std_msgs/msg/string.hpp"
 #include <vector>
 #include <cmath>
@@ -83,8 +84,10 @@ public:
 private:
     // Subscribers and Publishers
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr dis_pub;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub;
 
     //Debugger pubs 
     rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr front_pub;
@@ -93,11 +96,11 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr back_pub;
 
     // Configuration parameters
-    static constexpr float OBSTACLE_DISTANCE_THRESHOLD = 0.3f;  // 30 cm in meters
+    static constexpr float OBSTACLE_DISTANCE_THRESHOLD = 0.2f;  // 30 cm in meters
     static constexpr float SIDE_CHECK_DISTANCE = 0.50f;          // 50 cm for side checking
-    static constexpr float LINEAR_SPEED = 0.07f;                   // m/s
+    static constexpr float LINEAR_SPEED = 0.1f;                   // m/s
     static constexpr float ANGULAR_SPEED = 0.1f;                  // rad/s
-    static constexpr float TURN_ANGLE_TARGET = M_PI_2;             // 90 degrees in radians
+    static constexpr float TURN_ANGLE_TARGET = M_PI_2/3;             // 30° in rads.
     
     // Define angular sectors (in radians)
     const float FRONT_ANGLE = 0.524f;      // ±30°
@@ -107,13 +110,21 @@ private:
     const float RIGHT_ANGLE_START = -1.571f; // -90°
     const float RIGHT_ANGLE_END = -1.047f;   // -60°
 
-    // FSM State tracking
-    FSMState::State current_state;
+    enum class AutoState {
+        IDLE,
+        STOPPED,
+        PATH,
+        AVOIDING
+    };
+    AutoState auto_state;
+
     float accumulated_angle;
+    float accumulated_distance;
     rclcpp::Time last_scan_time;
     
     // Callback function
     void scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+    void pathCallback(const nav_msgs::msg::Path::SharedPtr msg);
     
     // Helper methods
     float getMinDistanceInRange(const sensor_msgs::msg::LaserScan& scan,
