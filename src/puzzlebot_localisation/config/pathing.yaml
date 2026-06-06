@@ -1,0 +1,96 @@
+path:
+    delivery:
+        cliente1:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        cliente2:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        cliente3:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+    up:
+        general:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p1:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p2:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p3:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p4:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p5:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+    rack1:
+        general:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p1:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p2:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p3:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p4:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p5:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p6:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+    rack2:
+        general:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p1:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p2:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p3:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p4:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p5:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p6:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+    rack3:
+        general:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p1:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p2:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p3:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p4:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p5:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}
+        p6:
+            position: {x:0.0, y:0.0}
+            orientation:{w:1.0}

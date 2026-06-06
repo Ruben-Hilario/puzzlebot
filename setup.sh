@@ -9,4 +9,7 @@ sudo apt-get install ros-humble-cartographer
 sudo apt-get install ros-humble-cartographer-*
 sudo apt-get install ros-humble-navigation2
 sudo apt-get install ros-humble-nav2-bringup
+sudo apt-get install ros-humble-foxglove*
+sudo apt-get install ros-humble-rosbridge-server
+sudo apt-get install ros-humble-web-video-server
 ./clone.sh

@@ -17,7 +17,7 @@ class VideoPublisher(Node):
         # self.declare_parameter('topic_name', 'video_frames')
         # self.declare_parameter('loop', True)
         
-        self.video_path = os.path.join(get_package_share_directory('puzzlebot_vision'), 'media', 'model_test.mp4')
+        self.video_path = os.path.join(get_package_share_directory('puzzlebot_vision'), 'media','video', 'last.mp4')
         self.fps = 30.0
         self.topic_name = 'video_frames'
         self.loop = True
@@ -82,9 +82,31 @@ class VideoPublisher(Node):
         self.cap.release()
         super().destroy_node()
 
+class StaticImagePublisher(Node):
+    def __init__(self):
+        super().__init__('static_image_publisher')
+        self.publisher_ = self.create_publisher(Image, '/video_frames', 10)
+        self.timer = self.create_timer(1.0, self.timer_callback) # 1 Hz for static image
+        self.br = CvBridge()
+        
+        # Path to your image file
+        image_path =os.path.join(get_package_share_directory('puzzlebot_vision'),'media','video','single_frame.png') 
+        self.frame = cv2.imread(image_path)
+        
+        if self.frame is None:
+            self.get_logger().error(f'Could not open or find the image at: {image_path}')
+
+    def timer_callback(self):
+        if self.frame is not None:
+            self.publisher_.publish(self.br.cv2_to_imgmsg(self.frame, encoding="bgr8"))
+        else:
+            self.get_logger().warn('No valid image loaded to publish')
+            
+
 def main(args=None):
     rclpy.init(args=args)
     node = VideoPublisher()
+    # node = StaticImagePublisher()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

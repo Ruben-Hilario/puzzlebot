@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+	<script src="js/eventemitter2.min.js"></script>
+	<script src="js/roslib.min.js"></script>
+	<script src="js/easeljs.min.js"></script>
+	<script src="js/ros2d.min.js"></script>
+
+    <style>
+        body { font-family: sans-serif; background: #222; color: #fff; padding: 20px; }
+        #map { background: #333; margin-top: 10px; display: inline-block; }
+    </style>
+</head>
+<body>
+    <h1>ROS2 Custom Web Dashboard</h1>
+    <p>Status: <span id="status" style="color: red;">Disconnected</span></p>
+    <p>Latest Message: <span id="chatter-msg">Waiting...</span></p>
+    
+    <div id="map"></div>
+
+    <script>
+        // 2. Connect to the Rosbridge WebSocket Server
+        // Change 'localhost' to your robot's IP if running on separate devices
+        const ros = new ROSLIB.Ros({
+            url : 'ws://localhost:9090'
+        });
+
+        const statusEl = document.getElementById('status');
+
+        ros.on('connection', () => {
+            statusEl.innerText = 'Connected';
+            statusEl.style.color = 'green';
+        });
+
+        ros.on('error', (error) => {
+            statusEl.innerText = 'Error: ' + error;
+        });
+
+        ros.on('close', () => {
+            statusEl.innerText = 'Disconnected';
+            statusEl.style.color = 'red';
+        });
+
+        // 3. Example: Subscribe to a text topic (like /chatter)
+        const chatterListener = new ROSLIB.Topic({
+            ros : ros,
+            name : '/chatter',
+            messageType : 'std_msgs/msg/String'
+        });
+
+        chatterListener.subscribe((message) => {
+            document.getElementById('chatter-msg').innerText = message.data;
+        });
+
+        // 4. Example: Render a 2D Navigation Map (/map)
+        // This hooks into your nav_msgs/msg/OccupancyGrid topic automatically
+       // Updated Example: Render a 2D Navigation Map (/map)
+	const viewer = new ROS2D.Viewer({
+	    divID : 'map',
+	    width : 600,
+	    height : 500
+	});
+
+	const gridClient = new ROS2D.OccupancyGridClient({
+	    ros : ros,
+	    rootObject : viewer.scene,
+	    topic: '/map',       // <-- Explicitly define the topic
+	    continuous: true     // Keep listening for updates since it's volatile
+	});
+
+	// Scale and center the canvas map when data arrives
+	gridClient.on('change', () => {
+	    console.log("Map data received successfully!"); // Check your browser console for this!
+	    
+	    // Safely check if dimensions exist before trying to scale
+	    if (gridClient.currentGrid && gridClient.currentGrid.width) {
+		viewer.scaleToDimensions(gridClient.currentGrid.width, gridClient.currentGrid.height);
+		
+		// Shift camera view to map origin coordinates
+		if(gridClient.currentGrid.pose) {
+		    viewer.shift(gridClient.currentGrid.pose.position.x, gridClient.currentGrid.pose.position.y);
+		}
+	    }
+	});
+	
+	<h3>Live Camera Feed</h3>
+	<img src="http://localhost:8080/stream?topic=/video_frames&type=mjpeg" width="640" height="480" alt="Camera feed disconnected" />
+    </script>
+</body>
+</html>
