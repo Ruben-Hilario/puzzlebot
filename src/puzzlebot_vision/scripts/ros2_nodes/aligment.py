@@ -14,6 +14,7 @@ from ament_index_python import get_package_share_directory
 import yaml
 from rclpy.qos import qos_profile_sensor_data
 from pyzbar.pyzbar import decode as zbar_decode
+from std_msgs.msg import Bool
 
 
 class Utils(Node):
@@ -157,18 +158,19 @@ class Utils(Node):
             7. Switch to montecarlo nuevamente
             8. Ir a waypoint de decode
         """ 
-
 class PoseNode(Node):
     def __init__(self):
         super().__init__('yolo_metrics_node')
         try: 
             from ultralytics import YOLO
         except ImportError:
-            self.get_logger().error('Ultralytics YOLO library not found"')
+            self.get_logger().error('Ultralytics YOLO library not found')
             raise
-        model_path = os.path.join(get_package_share_directory('puzzlebot_vision'),'models','fine_tunned.pt')
+        
+        model_path = os.path.join(get_package_share_directory('puzzlebot_vision'), 'models', 'fine_tunned.pt')
         self.model = YOLO(model_path)
         self.bridge = CvBridge()
+        
         self.subscription = self.create_subscription(
             Image,
             '/video_frames', 
@@ -187,6 +189,11 @@ class PoseNode(Node):
         self.al_pub = self.create_publisher(Image, '/align', 10)
         self.vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.get_logger().info('Alignment testing')
+
+        self.det_pub = self.create_publisher(Bool, '/pallet_detected', 10)
+        self.qr_flag_pub = self.create_publisher(Bool, '/pallet_has_qr', 10)
+        self.qr_content_pub = self.create_publisher(String, '/pallet_qr_content', 10)
+        self.alineacion_pub = self.create_publisher(Bool, '/alineation/booleano', 10)
 
     def decode(self, roi):
         try:
@@ -210,7 +217,7 @@ class PoseNode(Node):
             twist_msg = Twist()
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             h, w, _ = cv_image.shape
-            h_center, w_center = h//2, w//2
+            h_center, w_center = h // 2, w // 2
             
             results = self.model(cv_image, device='cpu', verbose=False)
             annotated_frame = results[0].plot()
@@ -229,7 +236,10 @@ class PoseNode(Node):
                     boxes_4.append(coords)
             
             best_box = None
+            qr_content_string = ""
+            pallet_has_qr = False
             
+            # Find the specific class_ID target that actually has a QR code above it
             for b3 in boxes_3:
                 xmin3, ymin3, xmax3, ymax3 = b3
                 center_x3 = (xmin3 + xmax3) // 2
@@ -238,8 +248,9 @@ class PoseNode(Node):
                     xmin4, ymin4, xmax4, ymax4 = b4
                     center_x4 = (xmin4 + xmax4) // 2
                     
+                    # Condition to check if QR is directly above the object
                     if ymax4 <= (ymin3 + 20) and (xmin3 <= center_x4 <= xmax3 or xmin4 <= center_x3 <= xmax4):
-                        best_box = b3
+                        best_box = b3  # Target locked onto the element under a QR
                         
                         ymin4_safe = max(0, ymin4)
                         ymax4_safe = min(h, ymax4)
@@ -248,18 +259,34 @@ class PoseNode(Node):
                         
                         if ymax4_safe > ymin4_safe and xmax4_safe > xmin4_safe:
                             roi = cv_image[ymin4_safe:ymax4_safe, xmin4_safe:xmax4_safe]
-                            x = self.decode(roi)
-                            if x is not None:
-                                self.get_logger().info(f'QR: {x}')
+                            decoded_data = self.decode(roi)
+                            if decoded_data is not None:
+                                self.get_logger().info(f'QR Decoded: {decoded_data}')
+                                qr_content_string = decoded_data
+                                pallet_has_qr = True
                         break
+                
                 if best_box is not None:
-                    break
+                    break  # Stop checking other class_ID boxes once a valid pairing is discovered
             
+            # Publish Statuses and Actions based on finding the specific target
+            det_msg = Bool()
+            qr_flag_msg = Bool()
+            qr_str_msg = String()
+            alineacion_msg = Bool()
+
             if best_box is not None:
+                det_msg.data = True
+                qr_flag_msg.data = pallet_has_qr
+                qr_str_msg.data = qr_content_string
+                alineacion_msg.data = True  # Assuming tracking status is active
+
+                # Place visual marker circle on the targeted element
                 center_x = (best_box[0] + best_box[2]) // 2
                 center_y = (best_box[1] + best_box[3]) // 2
                 cv2.circle(alignment_frame, (center_x, center_y), 8, (0, 0, 255), -1)
 
+                # Compute control errors
                 error_x = float(w_center - center_x) / (w / 2.0)
                 error_y = float(h_center - center_y) / (h / 2.0)
                 Kp = 0.1
@@ -272,12 +299,25 @@ class PoseNode(Node):
                 self.publish(annotated_frame, alignment_frame)
             else:
                 self.get_logger().info(f'Target class {self.class_ID} with QR above not found.')
+                det_msg.data = False
+                qr_flag_msg.data = False
+                qr_str_msg.data = ""
+                alineacion_msg.data = False
+
                 annotated_frame = results[0].plot()
                 out_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding='bgr8')
                 self.publisher.publish(out_msg)
+                
                 twist_msg.linear.x = 0.0
                 twist_msg.angular.z = 0.0
+            
+            # Send ROS 2 payloads
+            self.det_pub.publish(det_msg)
+            self.qr_flag_pub.publish(qr_flag_msg)
+            self.qr_content_pub.publish(qr_str_msg)
+            self.alineacion_pub.publish(alineacion_msg)
             self.vel_pub.publish(twist_msg)
+
         except Exception as e:
             self.get_logger().error(f'Inference failed: {e}')
         
@@ -285,18 +325,14 @@ class PoseNode(Node):
         out_msg = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
         al_msg = self.bridge.cv2_to_imgmsg(alignment, encoding='bgr8')
         self.publisher.publish(out_msg)
-        self.al_pub.publish(al_msg)
-        
-        
-
-
+        self.al_pub.publish(al_msg)        
         
 def main(args=None):
     rclpy.init(args=args)
     node = None
     try:
-        # node = PoseNode()
-        node = Utils()
+        node = PoseNode()
+        # node = Utils()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass

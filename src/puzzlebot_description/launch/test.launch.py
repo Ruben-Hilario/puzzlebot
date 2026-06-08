@@ -11,7 +11,7 @@ from launch.substitutions.path_join_substitution import PathJoinSubstitution
 ARGUMENTS = [
     DeclareLaunchArgument('use_sim_time', default_value='true'  , choices=['true', 'false'], description='Use sim time'),
     DeclareLaunchArgument('robot_name', default_value='puzzlebot', description='Ignition model name'),
-    DeclareLaunchArgument('world', default_value='track_world', description='World name'),
+    DeclareLaunchArgument('world', default_value='worldDT', description='World name'),
     ]
 
 def generate_launch_description():

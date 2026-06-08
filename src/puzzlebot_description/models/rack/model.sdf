@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sdf version="1.6">
-  <model name="map">
+  <model name="rack">
     <static>true</static>
     <link name="link">
       
@@ -8,8 +8,8 @@
         <pose>0 0 0 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>./meshes/map.stl</uri>
-            <scale>0.001 0.001 0.001</scale>
+            <uri>./meshes/rack.stl</uri>
+            <scale>1 1 1</scale>
           </mesh>
         </geometry>
         <material>
@@ -23,14 +23,12 @@
         <pose>0 0 0 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>./meshes/map.stl</uri>
-            <scale>0.001 0.001 0.001</scale>
+            <uri>./meshes/rack.stl</uri>
+            <scale>1 1 1</scale>
           </mesh>
         </geometry>
       </collision>
       
-      <
-
     </link>
   </model>
 </sdf>
